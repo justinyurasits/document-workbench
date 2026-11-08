@@ -352,6 +352,10 @@
         }
       ]
     },
+    "repeat_client": {
+      "$ref": "#/$defs/boolean",
+      "description": "Whether the client is a repeat client. Read only when the company enables REPEAT-CLIENT-DISCOUNT."
+    },
     "clarifications_and_exclusions": {
       "type": "array",
       "minItems": 1,
@@ -630,6 +634,11 @@
             "permits_and_fees"
           ]
         },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The rate table role this line is priced at (labor and general conditions). Matched exactly; a line without one gets no table rate."
+        },
         "description": {
           "type": "string",
           "minLength": 1
@@ -779,6 +788,29 @@
         },
         {
           "$ref": "#/$defs/not_applicable"
+        }
+      ]
+    },
+    "boolean": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "value"
+          ],
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/unknown"
         }
       ]
     }

@@ -208,7 +208,8 @@ def test_quote_date_is_a_bracketed_blank(tmp_path, package, draft):
 
 
 def test_unknown_price_leaves_the_total_blank_and_flags(tmp_path, package, draft):
-    draft["cost_lines"][0]["unit_price"] = {"status": "unknown", "question": "What's the rate?"}
+    # The quoted line: a labor line priced as hours × rate takes the company rate instead (tests/test_pricing.py).
+    draft["cost_lines"][1]["unit_price"] = {"status": "unknown", "question": "What's the rate?"}
     result = run(tmp_path, package, draft)
     assert summary_rows(result.path)["Total"] == "[total]" and "incomplete_pricing" in result.kinds()
 

@@ -28,7 +28,7 @@
   "pricing_basis": "lump_sum",
   "nte_amount": {"status": "not_applicable", "reason": "Lump sum."},
   "cost_lines": [
-    {"category": "labor", "trade": "carpentry", "division": {"status": "known", "value": "06"}, "description": "Sample carpentry",
+    {"category": "labor", "role": "Carpenter", "trade": "carpentry", "division": {"status": "known", "value": "06"}, "description": "Sample carpentry",
      "quantity": {"status": "known", "value": 8}, "unit": {"status": "known", "value": "HR"}, "unit_price": {"status": "known", "value": 100},
      "basis": "hours_x_rate", "evidence": {"source": "rate_table", "reference": {"status": "known", "value": "Company rate"}, "date": {"status": "not_applicable", "reason": "Current rate."}},
      "attachment": {"status": "not_applicable", "reason": "None."}, "permit": "not_applicable"},
