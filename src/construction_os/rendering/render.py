@@ -10,7 +10,7 @@ from docx.shared import Inches, Pt
 from docxtpl import DocxTemplate, InlineImage, RichText
 from jinja2 import Environment, StrictUndefined
 
-from .pricing import price
+from construction_os.pricing import cents, price
 
 NOT_APPLICABLE = "Not applicable"
 PLACEHOLDER = "PLACEHOLDER"
@@ -125,11 +125,6 @@ def presentation(draft, values, flags):
     return setting
 
 
-def price_field(line):
-    field_value = line["unit_price"]
-    return field_value["value"] if field_value.get("status") == "known" else None
-
-
 def line_source(line):
     evidence = line["evidence"]
     label = BASIS_LABELS[line["basis"]]
@@ -148,9 +143,17 @@ def line_attachment(line):
     return "[att.]" if field_value.get("status") == "unknown" else ""
 
 
+def shown_quantity(line, value):
+    if value is None:
+        return quantity_text(line["quantity"])
+    return f"{value:g}" if value == cents(value) else f"{cents(value):g}"
+
+
 def pricing_rows(draft, priced, mode):
     lines = []
-    for index, (line, amount) in enumerate(zip(draft["cost_lines"], priced.amounts)):
+    shown_lines = [(draft["cost_lines"][p.index], p) for p in priced.lines if p.included]
+    for index, (line, result) in enumerate(shown_lines):
+        amount, unit_price = result.amount, result.unit_price
         hide = mode == "hidden" and line["category"] not in priced.pass_through_categories
         division = line["division"]
         lines.append({
@@ -158,9 +161,9 @@ def pricing_rows(draft, priced, mode):
             "description": line["description"],
             "source": line_source(line),
             "attachment": line_attachment(line),
-            "quantity": quantity_text(line["quantity"]),
+            "quantity": shown_quantity(line, result.quantity),
             "unit": shown(line["unit"], "[unit]"),
-            "unit_price": "Included" if hide else (money(price_field(line)) if price_field(line) is not None else "[unit price]"),
+            "unit_price": "Included" if hide else (money(unit_price) if unit_price is not None else "[unit price]"),
             "amount": "Included" if hide else (money(amount) if amount is not None else "[amount]"),
             "fill": LINEN if index % 2 else WHITE,
         })
@@ -174,10 +177,13 @@ def pricing_rows(draft, priced, mode):
             rows.append(("Markup", rest))
     elif mode == "combined":
         rows.append(("Markup", priced.markup))
+    if priced.discount and mode != "hidden":
+        rows.append((f"{priced.discount.name} ({priced.discount.rate:g}%)", -priced.discount.amount))
     if priced.pass_through and mode != "hidden":
         rows.append(("Permits and fees, passed through without markup", priced.pass_through))
     total = money(priced.total) if priced.complete else "[total]"
-    summary = [{"label": label, "amount": money(amount), "fill": WHITE} for label, amount in rows]
+    summary = [{"label": label, "amount": money(amount) if amount >= 0 else f"-{money(-amount)}", "fill": WHITE}
+               for label, amount in rows]
     summary.append({"label": "Total", "amount": total, "fill": LINEN})
     return lines, summary
 
@@ -359,7 +365,8 @@ def render(draft, package, out):
     flags = needs.flags
     values = package.values
     header = draft["header"]
-    priced = price(draft, values)
+    priced = price(draft, package)
+    flags += [Flag(f.code, f.message) for f in priced.flags]
     mode = presentation(draft, values, flags)
     lines, summary = pricing_rows(draft, priced, mode)
     period, valid_through = validity(draft, values)
@@ -402,7 +409,7 @@ def render(draft, package, out):
     if not priced.complete:
         flags.append(Flag("incomplete_pricing", "A quantity or price is unknown, so the total is left blank."))
     if priced.contract_reference and priced.complete:
-        company = price(draft, values, use_contract=False)
+        company = price(draft, package, use_contract=False)
         flags.append(Flag("contract_pricing", f"Priced per {priced.contract_reference}: {money(priced.total)}. "
                                               f"Company pricing would give {money(company.total)}."))
     template.render(context, Environment(undefined=StrictUndefined), autoescape=True)

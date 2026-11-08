@@ -10,3 +10,8 @@ values:
   PCO-VALIDITY: 14 days
   role.Executive: {name: {from_profile: company.signatory.name}, fallback: Executive}
   role.ProjectManager: {name: null, fallback: the project manager on the request}
+  LABOR-BILLING-RATES: {from: company/pricing/rates.yaml, key: labor_billing_rates}
+  GC-WEEKLY-RATES: {from: company/pricing/rates.yaml, key: gc_weekly_rates}
+  GC-EXTENSION-THRESHOLD: 10
+  TAX-TREATMENT: included_in_material_estimates
+  REPEAT-CLIENT-DISCOUNT: {enabled: false, rate: null}

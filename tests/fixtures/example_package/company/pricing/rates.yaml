@@ -1,0 +1,8 @@
+# Example Builders' rate tables. Fictional, for tests only.
+labor_billing_rates:
+  - {role: "Carpenter", unit: hour, rate: 100, source: "Fixture rate"}
+  - {role: "Laborer", unit: hour, rate: 70, source: "Fixture rate"}
+  - {role: "Crew", unit: day, rate: 1500, source: "Fixture rate"}
+gc_weekly_rates:
+  - {role: "Project Manager", unit: week, rate: 2100, source: "Fixture rate"}
+  - {role: "Superintendent", unit: week, rate: 1800, source: "Fixture rate"}
