@@ -143,7 +143,9 @@ def presentation(draft, values, flags):
 def shown_quantity(line, value):
     if value is None:
         return quantity_text(line["quantity"])
-    return f"{value:g}" if value == cents(value) else f"{cents(value):g}"
+    """Whole quantities print without trailing zeros ("2", not "2.00"); others keep their decimals ("1.57")."""
+    value = value if value == cents(value) else cents(value)
+    return f"{value.to_integral_value():f}" if value == value.to_integral_value() else f"{value:f}"
 
 
 def labels(definition):

@@ -406,3 +406,10 @@ def test_renderer_shows_the_discount(tmp_path, example_root, draft):
     draft["repeat_client"] = {"status": "known", "value": True}
     rows, _ = summary(render(draft, package, tmp_path / "out.docx").path)
     assert rows["Repeat-client discount (5%)"] == "-$132.25" and rows["Total"] == "$2,512.75"
+
+
+def test_whole_weeks_print_without_trailing_zeros(tmp_path, example_root, draft):
+    draft = with_gc(schedule(draft, 14, 100))      # 14 days: 2.00 weeks
+    _, table = summary(render(draft, load_package(example_root), tmp_path / "out.docx").path)
+    row = next([c.text for c in r.cells] for r in table.rows if "Project management" in r.cells[1].text)
+    assert row[4] == "2" and row[7] == "$4,200.00"
