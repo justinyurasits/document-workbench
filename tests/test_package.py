@@ -1,9 +1,8 @@
 """The renderer against the real package: its sample drafts and template. All expectations come from the package."""
+import copy
 import json
 import os
 import re
-import shutil
-import subprocess
 import zipfile
 from decimal import Decimal
 from pathlib import Path
@@ -11,6 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 from docx import Document
+from docx.oxml.ns import qn
 
 from construction_os.rendering import CHECKLIST_TITLE, document_text, load_package, render, render_checklist, unfilled_fields
 from construction_os.validate import sample_paths
@@ -18,7 +18,6 @@ from construction_os.validate import sample_paths
 CORPUS = Path(os.environ.get("CORPUS", Path(__file__).resolve().parents[2] / "construction-os-corpus"))
 pytestmark = pytest.mark.skipif(not (CORPUS / "templates/pco.docx").exists() or not (CORPUS / "samples").is_dir(),
                                 reason="package not found; set CORPUS")
-SOFFICE = shutil.which("soffice") or "/Applications/LibreOffice.app/Contents/MacOS/soffice"
 SAMPLES = sample_paths(CORPUS)
 money = lambda value: f"${Decimal(value):,.2f}"
 
@@ -90,29 +89,71 @@ def test_one_typeface(tmp_path, package):
     assert len(set(re.findall(r'w:ascii="([^"]+)"', xml))) == 1
 
 
-def test_pricing_rows_stay_together_and_the_header_repeats(tmp_path, package):
-    table = next(t for t in Document(rendered(tmp_path, package, SAMPLES[0]).path).tables if t.rows[0].cells[0].text == "Div")
-    assert "w:tblHeader" in table._tbl.xml
-    assert all(p.paragraph_format.keep_with_next for row in table.rows for cell in row.cells for p in cell.paragraphs)
+# Page layout. A PCO is as long as it needs to be; these keep-together rules replace any page limit.
+# They are checked as Word properties, not by counting pages, which depends on the fonts installed.
+
+def row_paragraphs(row):
+    return [p for cell in row.cells for p in cell.paragraphs]
 
 
-def test_terms_stay_with_the_signatures(tmp_path, package):
-    document = Document(rendered(tmp_path, package, SAMPLES[0]).path)
+def keeps_with_next(row):
+    return all(p.paragraph_format.keep_with_next for p in row_paragraphs(row))
+
+
+def row_property(row, name):
+    properties = row._tr.trPr
+    return properties is not None and properties.find(qn(f"w:{name}")) is not None
+
+
+def long_draft(path):
+    """A sample draft with enough lines and signers to run past a page."""
+    draft = json.loads(path.read_text())
+    draft["cost_lines"] = [copy.deepcopy(line) for line in draft["cost_lines"] for _ in range(12)]
+    return draft
+
+
+def table_starting(document, label):
+    return next(t for t in document.tables if t.rows[0].cells[0].text == label)
+
+
+def test_template_repeats_the_pricing_header_and_keeps_only_the_last_line_with_the_summary(package):
+    table = table_starting(Document(package.template), "Div")
+    rows = list(table.rows)
+    assert row_property(rows[0], "tblHeader") and keeps_with_next(rows[0])
+    after = {rows[i].cells[0].text: rows[i + 1] for i in range(len(rows) - 1) if rows[i].cells[0].text.startswith("{%tr for")}
+    assert not keeps_with_next(after["{%tr for line in lines[:-1] %}"])
+    assert keeps_with_next(after["{%tr for line in lines[-1:] %}"])
+    assert keeps_with_next(after["{%tr for row in summary %}"])
+
+
+def test_pricing_table_breaks_between_lines_and_keeps_the_summary_with_the_last_line(tmp_path, package):
+    draft = long_draft(SAMPLES[0])
+    result = render(draft, package, tmp_path / "long.docx")
+    rows = list(table_starting(Document(result.path), "Div").rows)
+    count = len(draft["cost_lines"])
+    header, lines, summary = rows[0], rows[1:1 + count], rows[1 + count:]
+    assert row_property(header, "tblHeader") and row_property(header, "cantSplit") and keeps_with_next(header)
+    assert all(row_property(row, "cantSplit") for row in lines + summary)
+    assert all(p.paragraph_format.keep_together for row in lines + summary for p in row_paragraphs(row))
+    assert not any(keeps_with_next(row) for row in lines[:-1])
+    assert keeps_with_next(lines[-1]) and all(keeps_with_next(row) for row in summary)
+    assert summary[-1].cells[0].text == "Total"
+
+
+def test_signature_block_never_splits(tmp_path, package):
+    document = Document(render(long_draft(SAMPLES[0]), package, tmp_path / "long.docx").path)
     paragraphs = document.paragraphs
     start = next(i for i, p in enumerate(paragraphs) if p.text == "TERMS")
     end = next(i for i, p in enumerate(paragraphs) if p.text == "SIGNATURES")
-    assert all(p.paragraph_format.keep_with_next for p in paragraphs[start:end + 1])
-    table = next(t for t in document.tables if t.rows[0].cells[0].text == "Party")
-    assert all(p.paragraph_format.keep_with_next for row in table.rows for cell in row.cells for p in cell.paragraphs)
+    block = paragraphs[start:end + 1]
+    assert any(p.text.startswith("Authorization.") for p in block)
+    assert all(p.paragraph_format.keep_with_next for p in block)
+    assert all(p.paragraph_format.keep_together for p in block[1:-1])
+    rows = list(table_starting(document, "Party").rows)
+    header, signers = rows[0], rows[1:]
+    assert len(signers) == 3 and row_property(header, "tblHeader") and keeps_with_next(header)
+    assert all(row_property(row, "cantSplit") for row in rows)
+    assert all(p.paragraph_format.keep_together for row in rows for p in row_paragraphs(row))
+    assert all(keeps_with_next(row) for row in signers[:-1])
+    assert not keeps_with_next(signers[-1])     # the block ends here; the attachments may move on
 
-
-@pytest.mark.skipif(not (Path(SOFFICE).exists() and shutil.which("pdfinfo")), reason="LibreOffice or pdfinfo not installed")
-def test_package_acceptance_samples_fit_two_pages(tmp_path, package):
-    from construction_os.rendering.__main__ import preview_env
-
-    for path in SAMPLES:
-        result = rendered(tmp_path, package, path)
-        subprocess.run([SOFFICE, "--headless", "--convert-to", "pdf", "--outdir", str(tmp_path), str(result.path)],
-                       check=True, capture_output=True, env=preview_env())
-        info = subprocess.run(["pdfinfo", str(result.path.with_suffix(".pdf"))], capture_output=True, text=True).stdout
-        assert int(re.search(r"Pages:\s+(\d+)", info).group(1)) <= 2, path.name
