@@ -180,12 +180,14 @@ def test_gc_exactly_at_the_threshold_is_not_added(company, draft):
 def test_gc_just_over_the_threshold_is_added_and_prorated(company, draft):
     priced = price(with_gc(schedule(draft, 11, 100)), company)
     pm, superintendent = priced.lines[3:]
-    assert pm.quantity == D(11) / 7 and pm.unit_price == D(2100) and pm.amount == D("3300.00")
-    assert superintendent.amount == D("2828.57")           # 11 / 7 weeks × 1800, not rounded to whole weeks
+    assert pm.quantity == D("1.57") and pm.unit_price == D(2100) and pm.amount == D("3297.00")
+    assert superintendent.quantity == D("1.57")             # 11 / 7 = 1.5714, to two decimals, not whole weeks
+    assert superintendent.amount == D("2826.00")            # 1.57 × 1800
+    assert all(l.quantity * l.unit_price == l.amount for l in (pm, superintendent))
     assert superintendent.evidence.reference == "GC-WEEKLY-RATES, Superintendent"
-    assert priced.subtotal == D("8428.57")
-    assert [c.amount for c in priced.components] == [D("168.57"), D("674.29"), D("421.43")]
-    assert priced.total == D("9692.86") and priced.complete and not codes(priced)
+    assert priced.subtotal == D("8423.00")
+    assert [c.amount for c in priced.components] == [D("168.46"), D("673.84"), D("421.15")]
+    assert priced.total == D("9686.45") and priced.complete and not codes(priced)
 
 
 def test_gc_threshold_crossed_with_no_gc_lines_is_flagged(company, draft):
@@ -381,9 +383,9 @@ def test_renderer_shows_prorated_gc_and_the_engines_rate(tmp_path, example_root,
     draft["cost_lines"][0]["unit_price"]["value"] = 95
     result = render(draft, load_package(example_root), tmp_path / "out.docx")
     rows, table = summary(result.path)
-    assert rows["Total"] == "$9,692.86"
+    assert rows["Total"] == "$9,686.45"
     texts = [[c.text for c in r.cells] for r in table.rows]
-    assert any(r[2] == "Supervision (1.57 weeks at the house weekly rate)" and "1.57" in r and "$2,828.57" in r
+    assert any(r[2] == "Supervision (1.57 weeks at the house weekly rate)" and "1.57" in r and "$2,826.00" in r
                for r in texts)
     assert any(r[2] == "Sample carpentry (8 hours at the house rate)" and "$100.00" in r for r in texts)
     checklist = document_text(render_checklist(result, draft, load_package(example_root), tmp_path / "check.docx"))
