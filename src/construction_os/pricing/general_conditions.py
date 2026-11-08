@@ -1,6 +1,8 @@
 """General conditions: added only when the extension is more than GC-EXTENSION-THRESHOLD of the duration.
 
-Durations are calendar days. Weeks are extension_days / 7, prorated exactly; only the line amount is rounded.
+Durations are calendar days. Weeks are extension_days / 7, prorated (not rounded up to whole weeks) and
+rounded half up to two decimals. The amount is the rounded weeks × the weekly rate, rounded to cents, so the
+quantity, rate and amount printed on the PCO multiply out exactly.
 Roles and durations are never guessed: a gap is a flag.
 """
 from .flags import Flag
