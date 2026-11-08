@@ -30,7 +30,8 @@ def price_line(line, index, package, draft, extension_days=None):
 
     Labor priced as hours × rate and general conditions priced as weeks × rate take the company's table
     rate. Every other line (quotes, estimates, lump sums, fees) is carried as given, with its evidence.
-    For general conditions, extension_days sets the quantity: the extension in weeks, prorated exactly.
+    For general conditions, extension_days sets the quantity: the extension in weeks, rounded to two decimals,
+    and the amount is those rounded weeks × the weekly rate, so the printed line multiplies out exactly.
     """
     candidates = find_evidence(line, package, draft)
     table, own = candidates[:-1], candidates[-1]
@@ -83,23 +84,23 @@ def carried_or_blank(own, quantity, given, index, name, priced, flags):
 
 def general_conditions_line(line, index, table, own, quantity, given, extension_days, priced):
     name = line["description"]
-    weeks = extension_days / DAYS_PER_WEEK
+    weeks = cents(extension_days / DAYS_PER_WEEK)
     flags = []
-    if quantity is not None and cents(quantity) != cents(weeks):
+    if quantity is not None and cents(quantity) != weeks:
         flags.append(Flag("gc_quantity_differs",
                           f"{name}: the draft says {quantity:g} weeks; the extension is {extension_days:g} calendar "
-                          f"days, {cents(weeks)} weeks. Used the extension.", index))
+                          f"days, {weeks} weeks. Used the extension.", index))
     row = next((t for t in table if t.unit == "week"), None)
     if row is None:
         flags.append(Flag("gc_rate_not_found",
                           f"{name}: no weekly general conditions rate for role "
                           f"{line.get('role') or '(none given)'}.", index))
         if given is not None and own.names_a_source:
-            return priced(weeks, given, own, cents(extension_days * given / DAYS_PER_WEEK)), flags
+            return priced(weeks, given, own), flags
         flags.append(Flag("unsupported_price", f"{name}: the price has no stated source. Left blank.", index))
         return priced(weeks, None, own), flags
     if given is not None and given != row.rate:
         flags.append(Flag("gc_rate_differs",
                           f"{name}: the draft's weekly rate {given:,.2f} differs from the company rate "
                           f"{row.rate:,.2f} ({row.reference}). Used the company rate.", index))
-    return priced(weeks, row.rate, row, cents(extension_days * row.rate / DAYS_PER_WEEK)), flags
+    return priced(weeks, row.rate, row), flags
