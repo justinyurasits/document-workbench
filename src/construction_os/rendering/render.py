@@ -141,9 +141,7 @@ def presentation(draft, values, flags):
 
 
 def shown_quantity(line, value):
-    if value is None:
-        return quantity_text(line["quantity"])
-    return f"{value:g}" if value == cents(value) else f"{cents(value):g}"
+    return quantity_text(line["quantity"]) if value is None else number_text(value)
 
 
 def labels(definition):
