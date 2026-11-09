@@ -53,10 +53,10 @@ This renders every draft in the package's `samples/` and its PM checklist to `sa
 ```
 .venv/bin/python -m construction_os.draft --corpus ../construction-os-corpus --project P-001 \
     --project-name "Smith kitchen" --notes notes.txt [--quote quote.pdf ...] \
-    [--correspondence owner-email.txt ...] [--drawing layout.pdf ...]
+    [--correspondence owner-email.txt ...] [--drawing layout.pdf ...] [--selection SEL-7.pdf ...]
 ```
 
-Claude proposes the scope, quantities and cited amounts; code checks the proposal (one retry with the errors, then a clear error), prices it with the pricing engine, renders the PCO and the PM checklist, and writes a manifest. It prints the output paths, the total and the flags. A proposal that writes a price is rejected, not repaired. Quotes, correspondence and drawings become lettered exhibits, checked on the PCO only when the file was supplied; drawings are not sent to the model.
+Claude proposes the scope, quantities and cited amounts; code checks the proposal (one retry with the errors, then a clear error), prices it with the pricing engine, renders the PCO and the PM checklist, and writes a manifest. It prints the output paths, the total and the flags. A proposal that writes a price is rejected, not repaired. The PCO stands alone (CHG-53 4.0): quotes, the Owner's correspondence and Owner selections are filed as backup in the project, never attached; the PM checklist asks for any that aren't on file. Only a supplied drawing or layout becomes an exhibit. A supplied selection marks the line's Owner selection as issued with the PCO, referenced by ID. Drawings and selections are not sent to the model.
 
 - **Key:** `ANTHROPIC_API_KEY`, from the environment or `.env` (loaded by the CLI).
 - **Model:** `DRAFT_MODEL` or `--model` (default `claude-opus-5-5`); `DRAFT_EFFORT` or `--effort` (default `high`). Not secrets.

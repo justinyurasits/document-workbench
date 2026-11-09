@@ -23,34 +23,52 @@ depends_on:
   - {id: PERMIT-TREATMENT, applies_when: cost_lines include permits_and_fees}
   - {id: GC-WEEKLY-RATES, applies_when: schedule_extension_percent_of_duration > GC-EXTENSION-THRESHOLD}
   - {id: APPROVAL-SPEND, applies_when: subcontractor_commitment, audience: internal}
+  - {id: PRO-34, applies_when: owner_selection_present}
 inputs:
   required: [project, change_description, reason, scope_inclusions]
   asked_if_missing: [schedule_extension_days, quotes, quantities, architect_signs]
 cause_categories: [Owner-Directed, Field Condition]
 presentation:                    # fictional wording, so tests prove the PCO reads what the package says
+  terms: {contractor: the Contractor, owner: the Owner, contract: the Contract}
+  number_style: "six (6)"
   category_labels: {labor: Own crew, subcontractors: Trade partner, materials: Materials, equipment: Equipment, general_conditions: General conditions, permits_and_fees: Permits and fees}
   basis_phrases:
-    quote: "per {party}'s quote"
-    quote_no_party: "per {trade} quote"
     hours_x_rate: "{quantity} hours at the house rate"
     weeks_x_rate: "{quantity} weeks at the house weekly rate"
     rate_x_duration: "{quantity} {unit} at the house rate"
-    estimate: estimate
-    actual_fee: actual fee
+    estimate: fixed price
+    actual_fee: at cost
+  markup_basis:
+    company: "House markup: {rates}, on the direct-cost subtotal."
+    contract: "Markup per {reference}: {rates}, on the direct-cost subtotal, not compounded."
+    pass_through: " Fees pass through at cost."
   trade_parties: {electrical: electrician, carpentry: carpenter}
   total_labels: {add: "Change total: add", deduct: "Change total: deduct"}
-  request_line:
+  description_opening:
     applies_to: [Owner-Directed]
-    known: "Requested by the Owner (per {record})."
-    unknown: "Requested by the Owner (per [email / meeting] dated [date])."
+    known: "As the Owner asked (per {record}), "
+    unknown: "As the Owner asked (per [email / meeting] dated [date]), "
+    continues_with: the Contractor proposes
   schedule_no_change:
     impact: No change to the completion date
-    sentence: "No schedule impact, if authorized by {date}."
+    sentence: "No schedule impact, if authorized by {date} so the trades stay in sequence."
   exhibits:
-    quote: "{Party}'s quote"
     standard:
-      - {id: owner_request, title: Owner request correspondence, input_kind: correspondence, applies_when: cause_category is Owner-Directed}
-      - {id: layout_or_drawings, title: Layout or drawings, input_kind: drawing, applies_when: requested}
+      - {id: layout_or_drawings, title: Layout or drawings, input_kind: drawing, owner_facing: true, applies_when: requested}
+    requested_not_supplied: "{title}: supply one if the Owner should see it."
+  backup:
+    quote: "Written quote on file: {Party}'s quote"
+    correspondence: "Request on file: how and when the Owner asked."
+  selection:
+    approved: "{items} per Owner Selection {id}, approved {date}."
+    approved_as_noted: "{items} per Owner Selection {id}, approved as noted, {date}."
+    issued_with_pco: "{items} per Owner Selection {id}, issued with this PCO for the Owner's signature."
+    not_approved: "{items} per Owner Selection {id}, [approved on (date) / issued with this PCO]."
+    unknown: "{items} per Owner Selection [ID], [approved on (date) / issued with this PCO]."
+    question: "Which Owner Selection covers {items}, and is it approved?"
+    not_approved_question: "Owner Selection {id} is {status}. Get it approved, or issue it with this PCO."
+    confirm_notes: "Confirm the notes on Owner Selection {id} are reflected in this PCO."
+  internal_note: Note for the PM
   signature_titles:
     executive_cosign: "{company}"
     client: Owner
@@ -58,4 +76,4 @@ presentation:                    # fictional wording, so tests prove the PCO rea
     architect: Architect
     contractor_pm: Prepared by
 checklist:
-  before_sending: [header.owner, header.project_address, header.pco_number, header.project, attachment.quote, permit, contract_terms_not_applied, placeholder, incomplete_pricing, unsupported_price, price_in_scope_text, rule.APPROVAL-SPEND]
+  before_sending: [header.owner, header.project_address, header.pco_number, header.project, backup.quote, selection, selection.notes, permit, contract_terms_not_applied, placeholder, incomplete_pricing, unsupported_price, price_in_scope_text, rule.APPROVAL-SPEND]

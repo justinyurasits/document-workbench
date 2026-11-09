@@ -13,7 +13,7 @@
     "requested_approval_date": {"status": "known", "value": "2030-01-20"},
     "cause_category": {"status": "known", "value": "Owner-Directed"}
   },
-  "description": {"status": "known", "value": "Add a sample outlet."},
+  "description": {"status": "known", "value": "the Contractor proposes to add a sample outlet."},
   "reason": {"status": "unknown", "question": "Why is this change needed?"},
   "scope": {
     "inclusions": {"status": "known", "value": ["Sample carpentry", "Sample electrical"]},
@@ -35,7 +35,7 @@
     {"category": "subcontractors", "trade": "electrical", "division": {"status": "known", "value": "26"}, "description": "Sample electrical",
      "quantity": {"status": "known", "value": 1}, "unit": {"status": "known", "value": "LS"}, "unit_price": {"status": "known", "value": 1000},
      "basis": "quote", "evidence": {"source": "supplied_quote", "reference": {"status": "known", "value": "Sample quote"}, "date": {"status": "unknown", "question": "What is the quote date?"}},
-     "attachment": {"status": "known", "value": "A"}, "permit": "not_stated"},
+     "attachment": {"status": "not_applicable", "reason": "Backup on file."}, "permit": "not_stated"},
     {"category": "materials", "trade": "materials", "division": {"status": "unknown", "question": "Which division?"}, "description": "Sample materials",
      "quantity": {"status": "known", "value": 1}, "unit": {"status": "known", "value": "LS"}, "unit_price": {"status": "known", "value": 500},
      "basis": "estimate", "evidence": {"source": "pm_notes", "reference": {"status": "known", "value": "PM notes"}, "date": {"status": "not_applicable", "reason": "Estimate."}},
@@ -52,6 +52,7 @@
     "completion_date": {"status": "known", "value": "No change"},
     "authorization_by": {"status": "unknown", "question": "By what date must the owner authorize this?"}
   },
-  "attachments": [{"letter": "A", "description": "Sample quote"}],
+  "attachments": [],
+  "backup": [{"kind": "quote", "description": "Sample quote"}],
   "open_questions": ["A sample open question."]
 }

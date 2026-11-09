@@ -162,7 +162,7 @@ def headings(document):
 def test_numbered_sections_in_order_under_the_title(tmp_path, package):
     document = Document(rendered(tmp_path, package, SAMPLES[0]).path)
     assert headings(document) == ["POTENTIAL CHANGE ORDER", "1. DESCRIPTION OF POTENTIAL CHANGE", "2. SCOPE OF WORK",
-                                  "3. PRICING", "4. SCHEDULE IMPACT", "5. ATTACHMENTS", "AUTHORIZATION AND SIGNATURES"]
+                                  "3. PRICING", "4. SCHEDULE IMPACT", "AUTHORIZATION AND SIGNATURES"]   # no exhibits supplied
     texts = [p.text for p in document.paragraphs]
     labels = [t for t in texts if t in ("Added scope", "Deleted scope", "Assumptions", "Clarifications and exclusions")]
     assert labels == ["Added scope", "Deleted scope", "Assumptions", "Clarifications and exclusions"]
@@ -190,19 +190,19 @@ def fill(cell):
 
 def test_pricing_columns_are_short_and_amounts_never_wrap(tmp_path, package):
     table = pricing_table(rendered(tmp_path, package, SAMPLES[0]).path)
-    assert [c.text for c in table.rows[0].cells] == ["Div.", "Category", "Description", "Att.", "Qty", "Unit",
-                                                     "Unit price", "Amount"]
+    assert [c.text for c in table.rows[0].cells] == ["Div.", "Category", "Description", "Qty", "Unit", "Unit price",
+                                                     "Amount"]
     for row in table.rows:
-        assert cell_has(row.cells[7], "noWrap"), [c.text for c in row.cells]
-        if row.cells[0]._tc is not row.cells[6]._tc:
-            assert all(cell_has(row.cells[i], "noWrap") for i in (0, 3, 4, 5, 6))
+        assert cell_has(row.cells[6], "noWrap"), [c.text for c in row.cells]
+        if row.cells[0]._tc is not row.cells[5]._tc:
+            assert all(cell_has(row.cells[i], "noWrap") for i in (0, 1, 3, 4, 5))
 
 
 def test_total_is_a_dark_bar_with_the_package_label(tmp_path, package):
     rows = pricing_table(rendered(tmp_path, package, SAMPLES[0]).path).rows
     total = rows[-1]
     assert total.cells[0].text == package.definition["presentation"]["total_labels"]["add"] == "Total potential change: add"
-    assert fill(total.cells[0]) == fill(total.cells[7]) == "2C2C2C"
+    assert fill(total.cells[0]) == fill(total.cells[6]) == "2C2C2C"
 
 
 def test_authorization_states_the_total_validity_pcco_and_billing(tmp_path, package):
@@ -212,7 +212,8 @@ def test_authorization_states_the_total_validity_pcco_and_billing(tmp_path, pack
     assert "valid for 30 days from the date above" in text
     assert "Prime Contract Change Order No. PCCO-[###], which updates the contract sum and contract time" in text
     assert "not billable until that change order is executed" in text
-    assert "approval by email, text message or conversation does not authorize the work" in text
+    assert "Approval by email, text message or conversation does not authorize the work" in text
+    assert "the Owner authorizes the Contractor to perform the work" in text
 
 
 def test_running_header_has_the_pco_number_and_date(tmp_path, package):
@@ -248,3 +249,60 @@ def test_a_seven_figure_amount_never_wraps(tmp_path, package):
     dangling = [line for line in text.splitlines() if re.search(r"\$[\d,.]*$", line.rstrip())
                 and not re.search(r"\$[\d,]+\.\d\d$", line.rstrip())]
     assert not dangling, dangling
+
+
+# The PCO stands alone and reads as a letter (CHG-53 4.0)
+
+def test_authorization_is_four_short_paragraphs(tmp_path, package):
+    paragraphs = [p.text for p in Document(rendered(tmp_path, package, SAMPLES[0]).path).paragraphs]
+    start = paragraphs.index("AUTHORIZATION AND SIGNATURES")
+    block = paragraphs[start + 1:start + 5]
+    assert [p.split(" ", 3)[:3] for p in block] == [["By", "signing", "below,"], ["This", "authorization", "takes"],
+                                                    ["This", "price", "is"], ["Once", "executed,", "this"]]
+
+
+def test_defaults_point_at_nothing_the_owner_never_gets(package):
+    for prompt in package.definition["clarification_prompts"]:
+        assert "quote" not in prompt["default"]["text"].lower(), prompt["id"]
+
+
+INTERNAL_WORDS = re.compile(r"\b(PM|quotes?|subcontractors?|company carpenter|client)\b", re.I)
+
+
+@pytest.mark.parametrize("path", SAMPLES, ids=lambda p: p.stem)
+def test_no_internal_words_or_exhibits_for_backup(tmp_path, package, path):
+    text = document_text(rendered(tmp_path, package, path).path).replace("Prepared by", "")
+    assert not INTERNAL_WORDS.search(text), INTERNAL_WORDS.search(text)
+    assert "Exhibit" not in text and "5. ATTACHMENTS" not in text
+
+
+@pytest.mark.parametrize("path", SAMPLES, ids=lambda p: p.stem)
+def test_the_company_name_only_in_header_notice_signatures_and_footer(tmp_path, package, path):
+    document = Document(rendered(tmp_path, package, path).path)
+    name = package.company("name")
+    letter = [p.text for p in document.paragraphs]
+    letter += [c.text for r in pricing_table(document).rows for c in r.cells]
+    assert not any(name in text or name.upper() in text for text in letter)
+    assert name.upper() in document.tables[1].rows[0].cells[0].text           # the notice box
+
+
+@pytest.mark.skipif(not (Path(SOFFICE).exists() and shutil.which("pdftotext")), reason="LibreOffice or pdftotext not installed")
+def test_the_longest_category_label_never_wraps(tmp_path, package):
+    """Laid out by LibreOffice: "General conditions" and "Subcontract" each stay on one line."""
+    from construction_os.rendering.__main__ import preview_env
+
+    draft = json.loads((CORPUS / "samples/pco_test1_draft.json").read_text())
+    gc = dict(draft["cost_lines"][3], category="general_conditions", basis="weeks_x_rate",
+              role="Project Manager (Part-Time)", description="General conditions: project management")
+    draft["cost_lines"].append(gc)
+    draft["schedule"]["extension_days"] = {"status": "known", "value": 30}
+    draft["schedule"]["contract_duration_days"] = {"status": "known", "value": 100}
+    labels = package.definition["presentation"]["category_labels"].values()
+    longest = max(labels, key=len)
+    result = render(draft, package, tmp_path / "gc.docx")
+    subprocess.run([SOFFICE, "--headless", "--convert-to", "pdf", "--outdir", str(tmp_path), str(result.path)],
+                   check=True, capture_output=True, env=preview_env())
+    text = subprocess.run(["pdftotext", "-layout", str(result.path.with_suffix(".pdf")), "-"],
+                          capture_output=True, text=True).stdout
+    assert longest == "General conditions" and longest in text and "Subcontract " in text
+    assert not re.search(r"Subcontrac\s*$", text, re.M) and not re.search(r"General\s*$", text, re.M)

@@ -204,16 +204,57 @@
           },
           "kind": {
             "enum": [
+              "drawing",
               "quote",
               "correspondence",
-              "drawing",
               "other"
             ]
           }
         }
       }
     },
+    "backup": {
+      "description": "Pricing backup and records filed with the PCO in the job folder (CHG-53 2). Never printed as exhibits; a contract that requires backup with a change is a step 6 term.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "description"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "quote",
+              "correspondence",
+              "selection",
+              "takeoff",
+              "tm_log",
+              "photo",
+              "other"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "file": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
     "open_questions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "internal_notes": {
+      "description": "Notes for the PM (how something was estimated, what a quote covers). Never printed on the Owner's PCO.",
       "type": "array",
       "items": {
         "type": "string",
@@ -705,6 +746,9 @@
             "not_stated",
             "not_applicable"
           ]
+        },
+        "selection": {
+          "$ref": "#/$defs/selection"
         }
       }
     },
@@ -836,6 +880,40 @@
           "$ref": "#/$defs/unknown"
         }
       ]
+    },
+    "selection": {
+      "description": "An Owner selection (PRO-34) covering items on this line. Referenced by ID; never attached.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "status",
+        "id",
+        "date"
+      ],
+      "properties": {
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What the selection covers, e.g. 'Fixtures and trims'."
+        },
+        "status": {
+          "enum": [
+            "approved",
+            "approved_as_noted",
+            "issued_with_pco",
+            "pending",
+            "revised",
+            "unknown"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/text"
+        },
+        "date": {
+          "$ref": "#/$defs/date"
+        }
+      }
     }
   }
 }

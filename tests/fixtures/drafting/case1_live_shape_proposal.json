@@ -1,0 +1,263 @@
+{
+  "header": {
+    "project_address": {
+      "status": "unknown",
+      "question": "What is the project address?"
+    },
+    "owner": {
+      "status": "unknown",
+      "question": "Who is the owner?"
+    },
+    "contract_reference": {
+      "status": "unknown",
+      "question": "Which contract does this change?"
+    },
+    "location": {
+      "status": "known",
+      "value": "Living room ceiling"
+    },
+    "trades": {
+      "status": "known",
+      "value": [
+        "Electrical",
+        "Drywall",
+        "Painting",
+        "Carpentry"
+      ]
+    },
+    "change_event_ref": {
+      "status": "unknown",
+      "question": "Which change event does this PCO belong to?"
+    },
+    "requested_approval_date": {
+      "status": "unknown",
+      "question": "By what date is the Owner's decision needed?"
+    },
+    "cause_category": {
+      "status": "known",
+      "value": "Owner-Directed"
+    }
+  },
+  "description": {
+    "status": "known",
+    "value": "the Contractor proposes to add six (6) recessed LED light fixtures to the living room ceiling. This work is not included in the Contract scope of work. The change includes furnishing, wiring, switching and installing the fixtures, together with opening the ceiling, patching the drywall and finishing the affected ceiling areas."
+  },
+  "reason": {
+    "status": "known",
+    "value": "The homeowner asked for the added lighting."
+  },
+  "request_record": {
+    "status": "unknown",
+    "question": "How and when did the Owner request this change (email or meeting, and its date)?"
+  },
+  "scope": {
+    "inclusions": {
+      "status": "known",
+      "value": [
+        "Furnish and install six (6) recessed LED light fixtures in the living room ceiling, including wiring and switches.",
+        "Open the ceiling as required for the fixtures and wiring, and coordinate the electrical, drywall and painting work.",
+        "Patch the ceiling drywall at all openings made for this work.",
+        "Prime and paint the affected ceiling areas."
+      ]
+    },
+    "deleted_scope": {
+      "status": "known",
+      "value": []
+    },
+    "assumptions": [
+      "No work on this change has started."
+    ]
+  },
+  "clarifications_and_exclusions": [
+    {
+      "prompt": "concealed_conditions",
+      "trades": [
+        "all"
+      ],
+      "use_default": true
+    },
+    {
+      "prompt": "finish_limited",
+      "trades": [
+        "drywall",
+        "painting"
+      ],
+      "use_default": true
+    },
+    {
+      "prompt": "owner_upgrades",
+      "trades": [
+        "electrical"
+      ],
+      "use_default": true
+    },
+    {
+      "prompt": "permits",
+      "trades": [
+        "electrical"
+      ],
+      "use_default": true
+    },
+    {
+      "prompt": "hazardous_materials",
+      "trades": [
+        "all"
+      ],
+      "use_default": true
+    }
+  ],
+  "pricing_basis": "lump_sum",
+  "nte_amount": {
+    "status": "not_applicable",
+    "reason": "Lump sum."
+  },
+  "cost_lines": [
+    {
+      "category": "subcontractors",
+      "trade": "electrical",
+      "division": {
+        "status": "known",
+        "value": "26"
+      },
+      "description": "Electrical: furnish and install six (6) recessed LED light fixtures, including wiring and switches",
+      "quantity": {
+        "status": "known",
+        "value": 1
+      },
+      "unit": {
+        "status": "known",
+        "value": "LS"
+      },
+      "basis": "quote",
+      "permit": "not_stated",
+      "amount": {
+        "status": "cited",
+        "input": "notes-1",
+        "excerpt": "The electrician quoted $2,850 for the fixtures, wiring, switches, and installation.",
+        "value": 2850
+      },
+      "selection": {
+        "items": "Fixtures and trims",
+        "status": "unknown",
+        "id": {
+          "status": "unknown",
+          "question": "Which Owner Selection covers the fixtures and trims?"
+        },
+        "date": {
+          "status": "unknown",
+          "question": "When was that Owner Selection approved?"
+        }
+      }
+    },
+    {
+      "category": "subcontractors",
+      "trade": "drywall",
+      "division": {
+        "status": "known",
+        "value": "09"
+      },
+      "description": "Drywall: patch the ceiling at the fixture openings",
+      "quantity": {
+        "status": "known",
+        "value": 1
+      },
+      "unit": {
+        "status": "known",
+        "value": "LS"
+      },
+      "basis": "quote",
+      "permit": "not_applicable",
+      "amount": {
+        "status": "cited",
+        "input": "notes-1",
+        "excerpt": "Our drywall subcontractor quoted $750 for patching the ceiling",
+        "value": 750
+      }
+    },
+    {
+      "category": "subcontractors",
+      "trade": "painting",
+      "division": {
+        "status": "known",
+        "value": "09"
+      },
+      "description": "Painting: prime and paint the affected ceiling areas",
+      "quantity": {
+        "status": "known",
+        "value": 1
+      },
+      "unit": {
+        "status": "known",
+        "value": "LS"
+      },
+      "basis": "quote",
+      "permit": "not_applicable",
+      "amount": {
+        "status": "cited",
+        "input": "notes-1",
+        "excerpt": "our painter quoted $500 to finish the affected areas",
+        "value": 500
+      }
+    },
+    {
+      "category": "labor",
+      "role": "Carpenter",
+      "trade": "carpentry",
+      "division": {
+        "status": "known",
+        "value": "06"
+      },
+      "description": "Carpentry: open the ceiling and coordinate the trades",
+      "quantity": {
+        "status": "known",
+        "value": 6
+      },
+      "unit": {
+        "status": "known",
+        "value": "HR"
+      },
+      "basis": "hours_x_rate",
+      "permit": "not_applicable"
+    }
+  ],
+  "schedule": {
+    "extension_days": {
+      "status": "known",
+      "value": 0
+    },
+    "contract_duration_days": {
+      "status": "not_applicable",
+      "reason": "No schedule extension."
+    },
+    "critical_path": {
+      "status": "known",
+      "value": "no"
+    },
+    "completion_date": {
+      "status": "known",
+      "value": "No change"
+    },
+    "authorization_by": {
+      "status": "unknown",
+      "question": "By what date must the Owner authorize this for the schedule to hold?"
+    }
+  },
+  "architect_signs": {
+    "status": "unknown",
+    "question": "Does the architect sign this PCO?"
+  },
+  "contract_language": [],
+  "open_questions": [
+    "Can you supply the written quotes from the electrician, drywall subcontractor and painter?",
+    "Does the electrician's quote include the electrical permit and inspection, or should a separate permit line be added?",
+    "The electrical subcontract commitment exceeds the Project Manager spending limit under APPROVAL-SPEND. Has the Executive approved the subcontractor commitments?",
+    "Do the drywall and painting quotes include protection of the living room floor and furnishings?"
+  ],
+  "exhibits_needed": [
+    "layout_or_drawings"
+  ],
+  "internal_notes": [
+    "The electrician expects no effect on the completion date.",
+    "Carpentry is the PM's estimate of about six hours."
+  ]
+}

@@ -10,12 +10,15 @@ def table_starting(path_or_document, label):
     raise AssertionError(f"no table starting {label}")
 
 
-def pricing_table(path):
-    return table_starting(path, "Div.")
+def pricing_table(path_or_document):
+    return table_starting(path_or_document, "Div.")
+
+
+AMOUNT = 6   # the last column of the pricing table: Div., Category, Description, Qty, Unit, Unit price, Amount
 
 
 def merged(row):
-    return row.cells[0]._tc is row.cells[6]._tc
+    return row.cells[0]._tc is row.cells[AMOUNT - 1]._tc
 
 
 def summary_rows(path):
@@ -23,9 +26,9 @@ def summary_rows(path):
     rows = {}
     summary = [row for row in pricing_table(path).rows[1:] if merged(row)]
     for row in summary:
-        rows[row.cells[0].text] = row.cells[7].text
+        rows[row.cells[0].text] = row.cells[AMOUNT].text
     if summary:
-        rows["Total"] = summary[-1].cells[7].text
+        rows["Total"] = summary[-1].cells[AMOUNT].text
     return rows
 
 

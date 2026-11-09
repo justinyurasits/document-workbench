@@ -140,13 +140,6 @@ def presentation(draft, values, flags):
     return setting
 
 
-def line_attachment(line):
-    field_value = line["attachment"]
-    if field_value.get("status") == "known":
-        return field_value["value"]
-    return "[att.]" if field_value.get("status") == "unknown" else ""
-
-
 def shown_quantity(line, value):
     if value is None:
         return quantity_text(line["quantity"])
@@ -162,18 +155,13 @@ def category_label(category, presentation):
 
 
 def basis_phrase(line, quantity, presentation):
-    """The line's basis, from its evidence, in the company's words: "(per electrician's quote)"."""
-    phrases = presentation.get("basis_phrases") or {}
-    party = (presentation.get("trade_parties") or {}).get(line["trade"])
-    basis = line["basis"]
-    if basis == "quote":
-        template = phrases.get("quote") if party else phrases.get("quote_no_party")
-    else:
-        template = phrases.get(basis)
+    """The line's basis in the Owner's terms: "(6 hours at the Contractor's rate)", "(lump sum)". Never names a
+    quote, a subcontractor or how a figure was estimated; a basis with no phrase (a subcontract line) gets none."""
+    template = (presentation.get("basis_phrases") or {}).get(line["basis"])
     if not template:
         return ""
     amount = quantity_text(line["quantity"]) if quantity is None else number_text(quantity)
-    return f" ({template.format(party=party, trade=line['trade'], quantity=amount, unit=shown(line['unit'], '[unit]'))})"
+    return f" ({template.format(quantity=amount, unit=shown(line['unit'], '[unit]'))})"
 
 
 def number_text(value):
@@ -193,7 +181,6 @@ def pricing_rows(draft, priced, mode, presentation):
             "division": division["value"] if division.get("status") == "known" else ("[div]" if division.get("status") == "unknown" else ""),
             "category": category_label(line["category"], presentation),
             "description": line["description"] + basis_phrase(line, result.quantity, presentation),
-            "attachment": line_attachment(line),
             "quantity": shown_quantity(line, result.quantity),
             "unit": shown(line["unit"], "[unit]"),
             "unit_price": "Included" if hide else (money(unit_price) if unit_price is not None else "[unit price]"),
@@ -238,18 +225,21 @@ def join_names(names):
     return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
-def markup_basis(draft, priced, mode, company_name):
+def markup_basis(draft, priced, mode, presentation):
     """How the markup is calculated. Says "contract" only when a contract term was supplied and cited."""
     if mode == "hidden":
         return ""
+    wording = presentation.get("markup_basis") or {
+        "company": "Markup per standard pricing: {rates}, each calculated on the direct-cost subtotal.",
+        "contract": "Markup per {reference}: {rates}, each calculated on the direct-cost subtotal, not compounded.",
+        "pass_through": " Permits and fees are passed through without markup."}
     rates = join_names(f"{c.name} {c.rate:g}%" for c in priced.components)
     if priced.contract_reference:
-        sentence = f"Markup per {priced.contract_reference}: {rates}, each calculated on the direct-cost subtotal, not compounded."
+        sentence = wording["contract"].format(reference=priced.contract_reference, rates=rates)
     else:
-        owner = f"{company_name}'" if company_name.endswith("s") else f"{company_name}'s"
-        sentence = f"Markup per {owner} standard pricing: {rates}, each calculated on the direct-cost subtotal."
+        sentence = wording["company"].format(rates=rates)
     if priced.pass_through:
-        sentence += " Permits and fees are passed through without markup."
+        sentence += wording["pass_through"]
     return sentence
 
 
@@ -315,33 +305,108 @@ def schedule_fields(draft, needs, presentation):
     ], "sentence": ""}
 
 
-def request_line(draft, needs, presentation):
-    """How the Owner's request arrived, for the causes the company records it for."""
-    wording = presentation.get("request_line")
-    record = draft.get("request_record")
+def description_paragraph(draft, presentation):
+    """One paragraph in contract voice. For the causes the company records, it opens with the Owner's request and
+    the draft's text continues the sentence ("the Contractor proposes …")."""
+    description = draft["description"]
+    if description.get("status") != "known":
+        return shown(description, "[Description]")
+    opening = presentation.get("description_opening")
     cause = draft["header"]["cause_category"]
-    if not wording or (record or {}).get("status") == "not_applicable":
-        return ""
-    if cause.get("status") == "known" and cause["value"] not in wording.get("applies_to", []):
-        return ""
-    if (record or {}).get("status") == "known":
-        return wording["known"].format(record=record["value"])
-    needs.add("Request record", (record or {}).get("question") or
-              "How and when did the Owner request this change (email or meeting, and its date)?", key="request_record")
-    return wording["unknown"]
+    if not opening or cause.get("status") != "known" or cause["value"] not in opening.get("applies_to", []):
+        return description["value"]
+    record = draft.get("request_record") or {}
+    lead = opening["known"].format(record=record["value"]) if record.get("status") == "known" else opening["unknown"]
+    return lead + description["value"]
 
 
-def exhibits(draft, needs):
-    """Lettered exhibits. Checked only when a file was actually supplied; never otherwise."""
-    items = []
+def party(line, presentation):
+    name = (presentation.get("trade_parties") or {}).get(line["trade"])
+    return f"{name[0].upper()}{name[1:]}'s" if name else f"{line['trade'].capitalize()}"
+
+
+def backup_items(draft, needs, presentation):
+    """Backup is filed with the PCO, never attached (CHG-53 2). The PM confirms it's on file."""
+    wording = presentation.get("backup") or {}
+    filed = {item["kind"] for item in draft.get("backup") or []}
+    quoted = [line for line in draft["cost_lines"]
+              if line["basis"] == "quote" and line["evidence"]["source"] != "supplied_quote"]
+    parties = [party(line, presentation) for line in quoted]
+    for line, name in zip(quoted, parties):
+        if "quote" not in wording:
+            break
+        text = wording["quote"].format(Party=name.removesuffix("'s"), party=name)
+        if not name.endswith("'s"):
+            text = text.replace(f"{name}'s quote", f"{name} quote")
+        if parties.count(name) > 1:
+            text += f" ({line['description']})"
+        label, _, rest = text.partition(": ")
+        needs.add(label, rest, kind="backup", key="backup.quote")
+    opening = presentation.get("description_opening") or {}
+    cause = draft["header"]["cause_category"]
+    owner_request = cause.get("status") == "known" and cause["value"] in opening.get("applies_to", [])
+    if owner_request and "correspondence" not in filed and "correspondence" in wording:
+        label, _, rest = wording["correspondence"].partition(": ")
+        needs.add(label, rest, kind="backup", key="backup.correspondence")
+
+
+def selection_lines(draft, needs, presentation):
+    """Owner selections (PRO-34) referenced in the scope by ID. The selection itself is never attached."""
+    wording = presentation.get("selection") or {}
+    lines = []
+    for line in draft["cost_lines"]:
+        selection = line.get("selection")
+        if not selection or not wording:
+            continue
+        status, items = selection["status"], selection["items"]
+        ident = selection["id"]["value"] if selection["id"].get("status") == "known" else None
+        when = shown_date(selection["date"], "[date]")
+        if status in ("approved", "approved_as_noted", "issued_with_pco") and ident:
+            lines.append(wording[status].format(items=items, id=ident, date=when))
+            if status == "approved_as_noted":
+                needs.add("Owner selection", wording["confirm_notes"].format(id=ident), kind="selection",
+                          key="selection.notes")
+        elif status in ("pending", "revised") and ident:
+            lines.append(wording["not_approved"].format(items=items, id=ident))
+            needs.add("Owner selection", wording["not_approved_question"].format(id=ident, status=status),
+                      kind="selection", key="selection")
+        else:
+            lines.append(wording["unknown"].format(items=items))
+            needs.add("Owner selection", wording["question"].format(items=items[0].lower() + items[1:]),
+                      kind="selection", key="selection")
+    return lines
+
+
+def scope_items(draft, needs, presentation):
+    """Added scope, main work first; each Owner selection is referenced right after the first item."""
+    items = known_items(draft["scope"]["inclusions"], needs, "Added scope", "None stated", "[Added scope]")
+    selections = selection_lines(draft, needs, presentation)
+    return items[:1] + selections + items[1:] if selections else items
+
+
+def exhibits(draft, needs, presentation):
+    """Owner-facing attachments only (a drawing or layout), and only when actually supplied. Backup and Owner
+    selections are never exhibits. Lettered in the order shown."""
+    standard = (presentation.get("exhibits") or {}).get("standard", [])
+    facing = {e["input_kind"] for e in standard if e.get("owner_facing")}
+    shown_items = []
     for item in draft["attachments"]:
-        supplied = item.get("supplied") is True
-        items.append({"mark": "☒" if supplied else "☐", "letter": item["letter"],
-                      "label": f"Exhibit {item['letter']} — {item['description']}"})
-        if not supplied:
-            kind = item.get("kind") or "quote"
-            needs.add(f"Exhibit {item['letter']} ({item['description']})", "Attach the file.", key=f"attachment.{kind}")
-    return items or [{"mark": "", "letter": "", "label": "None"}]
+        if item.get("kind") not in facing:
+            continue
+        if item.get("supplied") is True:
+            letter = chr(ord("A") + len(shown_items))
+            shown_items.append({"mark": "☒", "letter": letter, "label": f"Exhibit {letter} — {item['description']}"})
+        else:
+            wording = (presentation.get("exhibits") or {}).get("requested_not_supplied", "{title}: supply one if needed.")
+            label, _, rest = wording.format(title=item["description"]).partition(": ")
+            needs.add(label, rest, kind="exhibit", key=f"attachment.{item['kind']}")
+    return shown_items
+
+
+def internal_notes(draft, needs, presentation):
+    label = presentation.get("internal_note", "Note for the PM")
+    for note in draft.get("internal_notes") or []:
+        needs.add(label, note, kind="internal_note", key="note")
 
 
 def internal_rules(draft, package, needs):
@@ -367,13 +432,16 @@ def clarification_lines(draft, needs):
 
 
 def check_clarifications(draft, definition, flags):
-    """Every prompt for every trade. A coverage gap is a flag; it never blocks."""
+    """Every prompt for every trade. A coverage gap is a flag; it never blocks. The company's default text applies
+    to every trade, so using it considers the prompt for all of them, whatever trades the item lists."""
     trades = {line["trade"] for line in draft["cost_lines"]}
     for prompt in definition.get("clarification_prompts") or []:
+        default = (prompt.get("default") or {}).get("text")
         covered = set()
         for item in draft["clarifications_and_exclusions"]:
             if item["prompt"] == prompt["id"]:
-                covered |= trades if "all" in item["trades"] else set(item["trades"])
+                applies_to_all = "all" in item["trades"] or (default and item["text"] == default)
+                covered |= trades if applies_to_all else set(item["trades"])
         for trade in sorted(trades - covered):
             flags.append(Flag("prompt_not_considered", f"{prompt['prompt']}: not considered for {trade}."))
 
@@ -384,14 +452,6 @@ def check_permits(draft, definition, needs):
         if line["trade"] in permit_trades and line["permit"] != "included_in_quote":
             needs.add(f"{line['trade'].capitalize()} permit", "Does the quote include the permit? If not, who pulls it, and at what cost?",
                       kind="permit_question", key="permit")
-
-
-def check_attachment_letters(draft, flags):
-    letters = {item["letter"] for item in draft["attachments"]}
-    for line in draft["cost_lines"]:
-        letter = line["attachment"].get("value") if line["attachment"].get("status") == "known" else None
-        if letter and letter not in letters:
-            flags.append(Flag("attachment_letter", f"{line['description']} points to attachment {letter}, which isn't listed."))
 
 
 def identity_value(package, path):
@@ -482,10 +542,8 @@ def render(draft, package, out):
         "header_rows": rows,
         "validity_period": period,
         "validity_date": valid_through,
-        "description": shown(draft["description"], "[Description]"),
-        "reason": shown(draft["reason"], "[Reason]"),
-        "request_line": request_line(draft, needs, wording),
-        "inclusions": known_items(draft["scope"]["inclusions"], needs, "Added scope", "None stated", "[Added scope]"),
+        "description": description_paragraph(draft, wording),
+        "inclusions": scope_items(draft, needs, wording),
         "deleted_scope": known_items(draft["scope"]["deleted_scope"], needs, "Deleted scope", "None", "[Deleted scope, or None]"),
         "assumptions": draft["scope"]["assumptions"] or ["None stated"],
         "clarifications": clarification_lines(draft, needs),
@@ -495,13 +553,15 @@ def render(draft, package, out):
         "total_amount": total_amount,
         "total_words": total_words,
         "total_figures": total_figures,
-        "markup_basis": markup_basis(draft, priced, mode, package.company("name")),
+        "markup_basis": markup_basis(draft, priced, mode, wording),
         "schedule": schedule_fields(draft, needs, wording),
-        "exhibits": exhibits(draft, needs),
+        "exhibits": exhibits(draft, needs, wording),
         "signature_blocks": signature_blocks(draft, package, needs),
     }
+    backup_items(draft, needs, wording)
+    internal_notes(draft, needs, wording)
     for line in draft["cost_lines"]:
-        for name in ("quantity", "unit", "unit_price", "division", "attachment"):
+        for name in ("quantity", "unit", "unit_price", "division"):
             needs.check(f"{line['description']}, {name.replace('_', ' ')}", line[name], key=f"line.{name}")
         needs.check(f"{line['description']}, quote reference", line["evidence"]["reference"], key="line.reference")
         needs.check(f"{line['description']}, quote date", line["evidence"]["date"], key="line.quote_date")
@@ -509,7 +569,6 @@ def render(draft, package, out):
               kind="pcco_number", key="pcco_number")
     check_clarifications(draft, package.definition, flags)
     check_permits(draft, package.definition, needs)
-    check_attachment_letters(draft, flags)
     internal_rules(draft, package, needs)
     if not priced.complete:
         flags.append(Flag("incomplete_pricing", "A quantity or price is unknown, so the total is left blank."))
@@ -536,8 +595,12 @@ FIELD_PHRASES = {   # A model question naming one of these restates a form field
     "header.pco_number": ("pco number",),
     "header.change_event_ref": ("change event",),
     "pcco_number": ("pcco",),
+    "backup.quote": ("written quote", "quotes in writing", "quote in writing", "copy of the quote", "copies of the quotes"),
+    "permit": ("permit",),
+    "selection": ("owner selection",),
 }
-ITEM_FLAGS = ("missing_input", "permit_question", "internal_rule", "pcco_number")
+ITEM_FLAGS = ("missing_input", "permit_question", "internal_rule", "pcco_number", "backup", "selection", "exhibit",
+              "internal_note")
 
 
 def normalized(text):
@@ -551,7 +614,10 @@ def restates(question, items):
         asked = normalized(item.text.split(": ", 1)[-1])
         if plain == asked or plain == normalized(item.text):
             return True
-        if any(normalized(phrase) in plain for phrase in FIELD_PHRASES.get(item.key, ())):
+        phrases = FIELD_PHRASES.get(item.key, ())
+        if item.key.startswith("rule."):
+            phrases = (item.key.removeprefix("rule."),)     # the rule's own ID, e.g. APPROVAL-SPEND
+        if any(normalized(phrase) in plain for phrase in phrases):
             return True
     return False
 

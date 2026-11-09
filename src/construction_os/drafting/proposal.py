@@ -59,6 +59,7 @@ def proposal_schema():
     properties["nte_amount"] = {"oneOf": [{"$ref": "#/$defs/unknown"}, {"$ref": "#/$defs/not_applicable"}]}
     properties["cost_lines"] = {"type": "array", "items": {"$ref": "#/$defs/cost_line"}}
     properties["architect_signs"] = {"$ref": "#/$defs/boolean"}
+    properties["internal_notes"] = copy.deepcopy(draft["properties"]["internal_notes"])
     properties["exhibits_needed"] = {
         "description": "Standard exhibits this change needs that are listed as 'requested' in the definition.",
         "type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": True}
@@ -69,7 +70,8 @@ def proposal_schema():
                   "properties": {"input": {"type": "string", "minLength": 1},
                                  "excerpt": {"type": "string", "minLength": 1}}},
     }
-    required = [name for name in properties if name not in ("repeat_client", "request_record", "exhibits_needed")]
+    required = [name for name in properties
+                if name not in ("repeat_client", "request_record", "exhibits_needed", "internal_notes")]
     return {"type": "object", "additionalProperties": False, "required": required, "properties": properties,
             "$defs": defs}
 
@@ -124,6 +126,10 @@ def check_proposal(proposal, schema, texts, roles, definition=None):
                 errors.append(f"{where}: with use_default, leave disposition and text out; code inserts the approved text.")
         elif "text" not in item or "disposition" not in item:
             errors.append(f"{where}: give disposition and text, or use_default where the company has a default.")
+    errors += description_errors(proposal, definition)
+    for index, line in enumerate(proposal["cost_lines"]):
+        if "selection" in line:
+            errors += selection_errors(f"cost_lines/{index} ({line['description']}) selection", line["selection"], texts)
     requestable = {e["id"] for e in ((definition.get("presentation") or {}).get("exhibits") or {}).get("standard", [])
                    if e.get("applies_when") == "requested"}
     for name in proposal.get("exhibits_needed") or []:
@@ -165,3 +171,35 @@ def citation_errors(where, cited, texts):
         return [f"{where}: {cited['value']} isn't a number written in the excerpt. If the figure isn't written as "
                 f"a plain number, make the amount unknown with a question."]
     return []
+
+
+def description_errors(proposal, definition):
+    """For the causes the company opens with the Owner's request, the description continues that sentence."""
+    opening = (definition.get("presentation") or {}).get("description_opening")
+    cause, description = proposal["header"]["cause_category"], proposal["description"]
+    if not opening or cause.get("status") != "known" or cause["value"] not in opening.get("applies_to", []):
+        return []
+    if description.get("status") == "known" and not description["value"].startswith(opening["continues_with"]):
+        return [f"description: for a {cause['value']} change the PCO opens with the Owner's request, so the description "
+                f"must continue that sentence, starting \"{opening['continues_with']}\"."]
+    return []
+
+
+def date_forms(iso):
+    year, month, day = (int(part) for part in iso.split("-"))
+    names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+             "November", "December"]
+    return {iso, f"{names[month - 1]} {day}, {year}", f"{month}/{day}/{year}", f"{month}/{day}/{year % 100:02d}",
+            f"{names[month - 1][:3]} {day}, {year}"}
+
+
+def selection_errors(where, selection, texts):
+    """A selection ID or date must come from the inputs, never be made up."""
+    errors = []
+    corpus = " ".join(normalized(text) for text in texts.values())
+    ident, when = selection["id"], selection["date"]
+    if ident.get("status") == "known" and normalized(ident["value"]) not in corpus:
+        errors.append(f"{where}: ID {ident['value']!r} isn't in the inputs. Leave it unknown with a question.")
+    if when.get("status") == "known" and not any(form in corpus for form in date_forms(when["value"])):
+        errors.append(f"{where}: date {when['value']} isn't in the inputs. Leave it unknown with a question.")
+    return errors
