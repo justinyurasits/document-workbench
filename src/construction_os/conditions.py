@@ -37,6 +37,8 @@ def evaluate(condition, draft, values):
         if days is None or not duration or threshold is None:
             return None
         return days / duration * 100 > threshold
+    if condition == "owner_selection_present":
+        return any(line.get("selection") for line in lines)
     if condition == "subcontractor_commitment":
         return any(line["category"] == "subcontractors" for line in lines)
     if match := re.fullmatch(r"cause_category is (.+)", condition):

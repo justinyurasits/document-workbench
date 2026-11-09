@@ -40,7 +40,7 @@
   },
   "description": {
     "status": "known",
-    "value": "Add six recessed LED lights to the living room ceiling. This was not in the original scope."
+    "value": "the Contractor proposes to add six (6) recessed LED light fixtures to the living room ceiling. This work is not included in the Contract scope of work. The change includes furnishing, wiring, switching and installing the fixtures, together with opening the ceiling, patching the drywall and finishing the affected ceiling areas."
   },
   "reason": {
     "status": "known",
@@ -54,10 +54,10 @@
     "inclusions": {
       "status": "known",
       "value": [
-        "Six recessed LED lights, with wiring, switches and installation",
-        "Opening the ceiling and coordinating the work",
-        "Patching the ceiling",
-        "Finishing the affected areas"
+        "Furnish and install six (6) recessed LED light fixtures in the living room ceiling, including wiring and switches.",
+        "Open the ceiling as required for the fixtures and wiring, and coordinate the electrical, drywall and painting work.",
+        "Patch the ceiling drywall at all openings made for this work.",
+        "Prime and paint the affected ceiling areas."
       ]
     },
     "deleted_scope": {
@@ -65,9 +65,7 @@
       "value": []
     },
     "assumptions": [
-      "No work has started.",
-      "The electrician expects no effect on the completion date.",
-      "Carpenter hours are the PM's estimate of about six hours."
+      "No work on this change has started."
     ]
   },
   "clarifications_and_exclusions": [
@@ -120,7 +118,7 @@
         "status": "known",
         "value": "26"
       },
-      "description": "Electrical: fixtures, wiring, switches and installation",
+      "description": "Electrical: furnish and install six (6) recessed LED light fixtures, including wiring and switches",
       "quantity": {
         "status": "known",
         "value": 1
@@ -136,6 +134,18 @@
         "input": "notes-1",
         "excerpt": "The electrician quoted $2,850 for the fixtures, wiring, switches, and installation.",
         "value": 2850
+      },
+      "selection": {
+        "items": "Fixtures and trims",
+        "status": "unknown",
+        "id": {
+          "status": "unknown",
+          "question": "Which Owner Selection covers the fixtures and trims?"
+        },
+        "date": {
+          "status": "unknown",
+          "question": "When was that Owner Selection approved?"
+        }
       }
     },
     {
@@ -145,7 +155,7 @@
         "status": "known",
         "value": "09"
       },
-      "description": "Drywall: patch the ceiling",
+      "description": "Drywall: patch the ceiling at the fixture openings",
       "quantity": {
         "status": "known",
         "value": 1
@@ -170,7 +180,7 @@
         "status": "known",
         "value": "09"
       },
-      "description": "Painting: finish the affected areas",
+      "description": "Painting: prime and paint the affected ceiling areas",
       "quantity": {
         "status": "known",
         "value": 1
@@ -196,7 +206,7 @@
         "status": "known",
         "value": "06"
       },
-      "description": "Carpenter: open the ceiling and coordinate",
+      "description": "Carpentry: open the ceiling and coordinate the trades",
       "quantity": {
         "status": "known",
         "value": 6
@@ -236,10 +246,12 @@
     "question": "Does the architect sign this PCO?"
   },
   "contract_language": [],
-  "open_questions": [
-    "Which fixtures and trims did the homeowner choose, and are dimmers included?"
-  ],
+  "open_questions": [],
   "exhibits_needed": [
     "layout_or_drawings"
+  ],
+  "internal_notes": [
+    "The electrician expects no effect on the completion date.",
+    "Carpentry is the PM's estimate of about six hours."
   ]
 }

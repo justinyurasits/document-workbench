@@ -69,7 +69,8 @@ def proposal():
             "requested_approval_date": unknown("By when?"),
             "cause_category": known("Owner-Directed"),
         },
-        "description": known("Add two outlets on the garage's north wall."),
+        "description": known("the Contractor proposes to add two (2) outlets on the north wall of the garage. This work "
+                             "is not included in the Contract scope of work."),
         "reason": known("The client asked for them."),
         "scope": {"inclusions": known(["Two outlets with wiring", "Open and patch the wall"]),
                   "deleted_scope": known([]), "assumptions": ["Carpenter hours are the PM's estimate."]},
@@ -266,10 +267,9 @@ def test_a_quote_mentioned_only_in_the_notes_is_pm_notes_and_asks_for_the_quote(
     line = json.loads(result.draft_path.read_text())["cost_lines"][0]
     assert (line["basis"], line["evidence"]["source"]) == ("quote", "pm_notes")
     draft = json.loads(result.draft_path.read_text())
-    assert line["attachment"] == known("A")
-    assert draft["attachments"][0] == {"letter": "A", "description": "Electrician's quote", "supplied": False, "kind": "quote"}
-    assert "Exhibit A (Electrician's quote): Attach the file." in document_text(result.checklist_path)
-    assert "☐ Exhibit A — Electrician's quote" in document_text(result.docx_path)
+    assert line["attachment"]["status"] == "not_applicable" and draft["attachments"] == [] and draft["backup"] == []
+    assert "Written quote on file: Electrician's quote" in document_text(result.checklist_path)
+    assert "Exhibit" not in document_text(result.docx_path)
 
 
 def test_a_supplied_quote_file_is_cited_as_a_supplied_quote_with_a_letter(store, package, tmp_path):
@@ -285,13 +285,10 @@ def test_a_supplied_quote_file_is_cited_as_a_supplied_quote_with_a_letter(store,
     draft = json.loads(result.draft_path.read_text())
     line = draft["cost_lines"][0]
     assert line["evidence"]["source"] == "supplied_quote" and line["evidence"]["reference"]["value"] == "sparkline-quote.txt"
-    assert line["attachment"] == known("A")
-    assert draft["attachments"] == [
-        {"letter": "A", "description": "Electrician's quote (sparkline-quote.txt)", "supplied": True, "kind": "quote"},
-        {"letter": "B", "description": "Owner request correspondence", "supplied": False, "kind": "correspondence"}]
-    text = document_text(result.docx_path)
-    assert "☒ Exhibit A — Electrician's quote (sparkline-quote.txt)" in text
-    assert "☐ Exhibit B — Owner request correspondence" in text
+    assert line["attachment"]["status"] == "not_applicable" and draft["attachments"] == []
+    assert draft["backup"] == [{"kind": "quote", "description": "sparkline-quote.txt", "file": quote_record.file}]
+    assert "Exhibit" not in document_text(result.docx_path)
+    assert "Written quote on file" not in document_text(result.checklist_path)      # it's on file
     assert result.priced.lines[0].amount == D("640.00")
 
 
@@ -454,8 +451,9 @@ def test_supplied_correspondence_and_drawings_are_checked_exhibits(store, packag
     client = FakeDraftingClient([tool_turn(proposal())])
     result = draft_pco(project, package, records, client)
     text = document_text(result.docx_path)
-    assert "☒ Exhibit B — Owner request correspondence (owner-email.txt)" in text
-    assert "☒ Exhibit C — Layout or drawings (layout.png)" in text
+    assert "☒ Exhibit A — Layout or drawings (layout.png)" in text and "owner-email" not in text
+    assert [b["kind"] for b in json.loads(result.draft_path.read_text())["backup"]] == ["correspondence"]
+    assert "Request on file" not in document_text(result.checklist_path)
     sent = json.dumps(client.requests)
     assert "Please add two outlets" in sent and "not really an image" not in sent    # drawings aren't sent
 
@@ -464,8 +462,8 @@ def test_a_requested_layout_is_an_unchecked_exhibit(store, package, tmp_path):
     wants_layout = proposal()
     wants_layout["exhibits_needed"] = ["layout_or_drawings"]
     result, _, _ = run(store, package, tmp_path, wants_layout)
-    assert "☐ Exhibit C — Layout or drawings" in document_text(result.docx_path)
-    assert "Exhibit C (Layout or drawings): Attach the file." in document_text(result.checklist_path)
+    assert "Exhibit" not in document_text(result.docx_path)
+    assert "Layout or drawings: supply one if the Owner should see it." in document_text(result.checklist_path)
 
 
 def test_an_unknown_exhibit_is_rejected(store, package, tmp_path):
@@ -479,7 +477,7 @@ def test_a_known_request_record_is_stated(store, package, tmp_path):
     recorded = proposal()
     recorded["request_record"] = known("email dated January 10, 2030")
     result, _, _ = run(store, package, tmp_path, recorded)
-    assert "Requested by the Owner (per email dated January 10, 2030)." in document_text(result.docx_path)
+    assert "As the Owner asked (per email dated January 10, 2030), the Contractor proposes" in document_text(result.docx_path)
 
 
 def test_cli_takes_correspondence_and_drawings(tmp_path, example_root):
@@ -525,3 +523,83 @@ def test_live_script_leaves_the_project_name_unknown(tmp_path, monkeypatch):
     monkeypatch.setattr(live_eval, "real_client", lambda settings: SimpleNamespace(settings=Settings()))
     live_eval.main(["--corpus", str(CORPUS), "--cases", "1", "--keep", str(tmp_path / "store")])
     assert names == [None]
+
+
+# The letter and Owner selections
+
+def test_a_description_that_does_not_continue_the_request_is_rejected(store, package, tmp_path):
+    wrong = proposal()
+    wrong["description"] = known("Add two outlets to the garage.")
+    _, client, _ = run(store, package, tmp_path, wrong, proposal())
+    assert 'starting "the Contractor proposes"' in last_feedback(client)
+
+
+def with_selection(base, status="unknown", ident=None, when=None):
+    base["cost_lines"][0]["selection"] = {
+        "items": "Outlets and cover plates", "status": status,
+        "id": known(ident) if ident else unknown("Which Owner Selection covers the outlets?"),
+        "date": known(when) if when else unknown("When was it approved?")}
+    return base
+
+
+def test_a_selection_id_or_date_not_in_the_inputs_is_rejected(store, package, tmp_path):
+    invented = with_selection(proposal(), "approved", "SEL-99", "2030-01-08")
+    _, client, _ = run(store, package, tmp_path, invented, proposal())
+    feedback = last_feedback(client)
+    assert "ID 'SEL-99' isn't in the inputs" in feedback and "date 2030-01-08 isn't in the inputs" in feedback
+
+
+def test_a_selection_stated_in_the_notes_is_referenced(store, package, tmp_path):
+    text = NOTES + " The Owner approved selection SEL-7 on January 8, 2030."
+    result, _, _ = run(store, package, tmp_path, with_selection(proposal(), "approved", "SEL-7", "2030-01-08"), text=text)
+    assert "Outlets and cover plates per Owner Selection SEL-7, approved January 8, 2030." in document_text(result.docx_path)
+    sources = {s["id"]: s for s in json.loads(result.manifest_path.read_text())["sources"]}
+    assert sources["PRO-34"]["applies"] is True
+
+
+def test_a_supplied_selection_is_issued_with_the_pco_and_filed_never_attached(store, package, tmp_path):
+    project = store.create("P-020", "Garage")
+    notes = add_notes(project, tmp_path, NOTES + " Selection SEL-7 goes to the Owner with this PCO.")
+    sheet = tmp_path / "SEL-7.xlsx"
+    sheet.write_bytes(b"not read by the model")
+    records = [notes, project.add_input("selection", sheet)]
+    client = FakeDraftingClient([tool_turn(with_selection(proposal(), "pending", "SEL-7"))])
+    result = draft_pco(project, package, records, client)
+    draft = json.loads(result.draft_path.read_text())
+    assert draft["cost_lines"][0]["selection"]["status"] == "issued_with_pco"
+    assert [b["kind"] for b in draft["backup"]] == ["selection"] and draft["attachments"] == []
+    text = document_text(result.docx_path)
+    assert "per Owner Selection SEL-7, issued with this PCO for the Owner's signature." in text and "Exhibit" not in text
+    assert "not read by the model" not in json.dumps(client.requests)
+
+
+def test_cli_takes_a_selection(tmp_path, example_root):
+    notes, sheet = tmp_path / "notes.txt", tmp_path / "sel.pdf"
+    notes.write_text(NOTES)
+    sheet.write_bytes(b"%PDF-1.4")
+    code = cli.main(["--corpus", str(example_root), "--project", "P-001", "--notes", str(notes), "--selection", str(sheet),
+                     "--projects-dir", str(tmp_path / "projects")],
+                    client_factory=lambda s: FakeDraftingClient([tool_turn(proposal())]), out=io.StringIO(), err=io.StringIO())
+    assert code == 0
+    assert [r.kind for r in FileProjectStore(tmp_path / "projects").open("P-001").inputs()] == ["notes", "selection"]
+
+
+@needs_corpus
+def test_case_1_has_one_written_quote_item_per_quoted_line(store):
+    result = corpus_case(store, "01_added_lighting", "case1_proposal.json")
+    text = document_text(result.checklist_path)
+    assert [l for l in text.split("\n") if "Written quote on file" in l] == [
+        "☐  Written quote on file: Electrician's quote", "☐  Written quote on file: Drywall subcontractor's quote",
+        "☐  Written quote on file: Painter's quote"]
+    assert "Exhibit" not in document_text(result.docx_path)
+
+
+@needs_corpus
+def test_case_1_live_run_false_items_and_duplicates_are_gone(store):
+    """Shaped like the Nov 9 live run: defaults scoped to some trades, and questions the checklist already asks."""
+    result = corpus_case(store, "01_added_lighting", "case1_live_shape_proposal.json")
+    assert not [f for f in result.flags if f.kind == "prompt_not_considered"]
+    text = document_text(result.checklist_path)
+    assert "supply the written quotes" not in text and "include the electrical permit and inspection" not in text
+    assert "spending limit under APPROVAL-SPEND" not in text
+    assert "protection of the living room floor" in text          # a real question stays

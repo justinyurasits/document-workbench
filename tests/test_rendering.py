@@ -131,14 +131,15 @@ def test_contract_term_sets_the_presentation(tmp_path, package, draft):
 
 def test_markup_sentence_cites_company_pricing_not_a_contract(tmp_path, package, draft):
     text = document_text(run(tmp_path, package, draft).path)
-    assert "Markup per Example Builders' standard pricing: Company fee 2%, Overhead 8% and Profit 5%" in text
+    assert "House markup: Company fee 2%, Overhead 8% and Profit 5%, on the direct-cost subtotal." in text
+    assert "Example Builders" not in text.split("NO WORK")[0]           # the company name stays out of the letter
     assert "per the Contract" not in text and "per Contract" not in text
 
 
 def test_markup_sentence_cites_a_supplied_contract(tmp_path, package, draft):
     contract_terms(draft)
     text = document_text(run(tmp_path, package, draft).path)
-    assert "Markup per Sample clause 9: Overhead 6% and Profit 4%" in text and "standard pricing" not in text
+    assert "Markup per Sample clause 9: Overhead 6% and Profit 4%" in text and "House markup" not in text
 
 
 # Signatures
@@ -287,18 +288,11 @@ def test_no_permit_question_when_the_quote_includes_it(tmp_path, package, draft)
     assert "permit_question" not in run(tmp_path, package, draft).kinds()
 
 
-def test_pricing_line_has_division_category_basis_and_letter(tmp_path, package, draft):
-    row = [c.text for c in pricing_table(run(tmp_path, package, draft).path).rows[2].cells]
-    assert row[:2] == ["26", "Trade partner"] and row[2] == "Sample electrical (per electrician's quote)" and row[3] == "A"
-
-
-def test_line_pointing_to_a_missing_attachment_is_flagged(tmp_path, package, draft):
-    draft["cost_lines"][1]["attachment"] = {"status": "known", "value": "Z"}
-    assert "attachment_letter" in run(tmp_path, package, draft).kinds()
-
-
-def test_attachments_are_lettered_exhibits(tmp_path, package, draft):
-    assert "☐ Exhibit A — Sample quote" in document_text(run(tmp_path, package, draft).path)
+def test_pricing_line_has_division_category_and_no_attachment_column(tmp_path, package, draft):
+    table = pricing_table(run(tmp_path, package, draft).path)
+    assert [c.text for c in table.rows[0].cells] == ["Div.", "Category", "Description", "Qty", "Unit", "Unit price", "Amount"]
+    row = [c.text for c in table.rows[2].cells]
+    assert row[:3] == ["26", "Trade partner", "Sample electrical"]     # a subcontract line gets no basis phrase
 
 
 def test_schedule_with_no_extension_is_one_row_and_a_sentence(tmp_path, package, draft):
@@ -306,12 +300,14 @@ def test_schedule_with_no_extension_is_one_row_and_a_sentence(tmp_path, package,
     table = table_with(path, "Schedule impact")
     assert [[c.text for c in r.cells] for r in table.rows] == [["Schedule impact", "No change to the completion date"]]
     text = document_text(path)
-    assert "No schedule impact, if authorized by [date]." in text and "Critical path" not in text
+    assert "No schedule impact, if authorized by [date] so the trades stay in sequence." in text
+    assert "Critical path" not in text
 
 
 def test_schedule_sentence_with_a_date(tmp_path, package, draft):
     draft["schedule"]["authorization_by"] = {"status": "known", "value": "2030-02-01"}
-    assert "No schedule impact, if authorized by February 1, 2030." in document_text(run(tmp_path, package, draft).path)
+    assert "No schedule impact, if authorized by February 1, 2030 so the trades stay in sequence." in \
+        document_text(run(tmp_path, package, draft).path)
 
 
 def test_schedule_with_added_days_keeps_every_row(tmp_path, package, draft):
@@ -341,16 +337,15 @@ def test_category_labels_and_basis_phrases_come_from_the_package(tmp_path, packa
                                 "description": "Permit", "trade": "permit"})
     rows = [[c.text for c in r.cells] for r in pricing_table(run(tmp_path, package, draft).path).rows[1:6]]
     assert [r[1] for r in rows] == ["Own crew", "Trade partner", "Materials", "Trade partner", "Permits and fees"]
-    assert [r[2] for r in rows] == ["Sample carpentry (8 hours at the house rate)",
-                                    "Sample electrical (per electrician's quote)", "Sample materials (estimate)",
-                                    "Patch (per drywall quote)", "Permit (actual fee)"]
+    assert [r[2] for r in rows] == ["Sample carpentry (8 hours at the house rate)", "Sample electrical",
+                                    "Sample materials (fixed price)", "Patch", "Permit (at cost)"]
 
 
 def test_a_negative_total_is_a_deduct_in_words_and_figures(tmp_path, package, draft):
     draft["cost_lines"][1]["unit_price"]["value"] = -3000
     path = run(tmp_path, package, draft).path
     rows = pricing_table(path).rows
-    assert rows[-1].cells[0].text == "Change total: deduct" and rows[-1].cells[7].text == "$1,955.00"
+    assert rows[-1].cells[0].text == "Change total: deduct" and rows[-1].cells[6].text == "$1,955.00"
     assert "for a deduction of one thousand nine hundred fifty-five dollars and 00/100 ($1,955.00)" in document_text(path)
 
 
@@ -358,27 +353,6 @@ def test_an_incomplete_total_leaves_words_and_figures_blank(tmp_path, package, d
     draft["cost_lines"][1]["unit_price"] = {"status": "unknown", "question": "What is the quote?"}
     path = run(tmp_path, package, draft).path
     assert summary_rows(path)["Total"] == "[total]" and "for [total in words] ([total])" in document_text(path)
-
-
-def test_an_exhibit_is_checked_only_when_its_file_was_supplied(tmp_path, package, draft):
-    draft["attachments"] = [{"letter": "A", "description": "Sample quote", "supplied": True, "kind": "quote"},
-                            {"letter": "B", "description": "Second quote", "supplied": False, "kind": "quote"},
-                            {"letter": "C", "description": "Owner request correspondence", "kind": "correspondence"},
-                            {"letter": "D", "description": "Old-style entry"}]
-    result = run(tmp_path, package, draft)
-    lines = [l for l in document_text(result.path).split("\n") if "Exhibit" in l]
-    assert lines == ["☒ Exhibit A — Sample quote", "☐ Exhibit B — Second quote",
-                     "☐ Exhibit C — Owner request correspondence", "☐ Exhibit D — Old-style entry"]
-    assert "Exhibit A (Sample quote): Attach the file." not in result.needed
-    assert "Exhibit B (Second quote): Attach the file." in result.needed
-
-
-def test_the_request_record_line(tmp_path, package, draft):
-    assert "Requested by the Owner (per [email / meeting] dated [date])." in document_text(run(tmp_path, package, draft).path)
-    draft["request_record"] = {"status": "known", "value": "email dated January 10, 2030"}
-    assert "Requested by the Owner (per email dated January 10, 2030)." in document_text(run(tmp_path, package, draft).path)
-    draft["header"]["cause_category"] = {"status": "known", "value": "Field Condition"}
-    assert "Requested by the Owner" not in document_text(run(tmp_path, package, draft).path)
 
 
 def test_running_header_carries_a_known_pco_number_and_the_date(tmp_path, package, draft):
@@ -426,3 +400,165 @@ def test_restated_and_repeated_questions_appear_once(tmp_path, package, draft):
     assert sum("owner" in i.lower() and "who is" in i.lower() for i in items) == 1
     assert "☐  A sample open question." in items and "☐  Is the outlet GFCI?" in items
     assert not any("owner's name" in i or "What's the project address?" in i for i in items)
+
+
+# The PCO stands alone: backup is filed, never attached (CHG-53 2)
+
+def section_titles(path):
+    return [p.text for p in Document(path).paragraphs if p.text.isupper() or p.text.startswith("5.")]
+
+
+def test_backup_and_unsupplied_items_are_never_exhibits(tmp_path, package, draft):
+    draft["attachments"] = [
+        {"letter": "A", "description": "Sample quote", "supplied": True, "kind": "quote"},
+        {"letter": "B", "description": "Owner email", "supplied": True, "kind": "correspondence"},
+        {"letter": "C", "description": "Layout or drawings", "supplied": False, "kind": "drawing"},
+        {"letter": "D", "description": "Old-style entry"}]
+    result = run(tmp_path, package, draft)
+    text = document_text(result.path)
+    assert "Exhibit" not in text and "5. ATTACHMENTS" not in text
+    assert "Layout or drawings: supply one if the Owner should see it." in result.needed
+
+
+def test_attachments_appear_only_for_a_supplied_drawing(tmp_path, package, draft):
+    path = run(tmp_path, package, draft).path
+    titles = section_titles(path)
+    assert "5. ATTACHMENTS" not in titles and titles[titles.index("AUTHORIZATION AND SIGNATURES") - 1] != "5. ATTACHMENTS"
+    draft["attachments"] = [{"letter": "A", "description": "Layout or drawings (plan.pdf)", "supplied": True, "kind": "drawing"}]
+    text = document_text(run(tmp_path, package, draft).path)
+    assert "5. ATTACHMENTS" in text and "☒ Exhibit A — Layout or drawings (plan.pdf)" in text
+
+
+def test_one_written_quote_item_per_quoted_line(tmp_path, package, draft):
+    second = dict(draft["cost_lines"][1], description="More electrical")
+    second["evidence"] = dict(second["evidence"], source="pm_notes")
+    draft["cost_lines"][1]["evidence"]["source"] = "pm_notes"
+    draft["cost_lines"].append(second)
+    items = [i for i in run(tmp_path, package, draft).needed if i.startswith("Written quote on file")]
+    assert items == ["Written quote on file: Electrician's quote (Sample electrical)",
+                     "Written quote on file: Electrician's quote (More electrical)"]
+
+
+def test_a_supplied_quote_needs_no_written_quote_item(tmp_path, package, draft):
+    draft["cost_lines"][1]["evidence"]["source"] = "supplied_quote"
+    assert not any(i.startswith("Written quote on file") for i in run(tmp_path, package, draft).needed)
+
+
+# The PCO is a letter from the Contractor to the Owner
+
+def test_description_is_one_paragraph_opening_with_the_request(tmp_path, package, draft):
+    paragraphs = [p.text for p in Document(run(tmp_path, package, draft).path).paragraphs]
+    opening = "As the Owner asked (per [email / meeting] dated [date]), the Contractor proposes to add a sample outlet."
+    assert paragraphs.count(opening) == 1
+    assert not any(p.startswith("Reason") or p.startswith("As the Owner asked") and p != opening for p in paragraphs)
+
+
+def test_a_known_request_is_woven_into_the_description(tmp_path, package, draft):
+    draft["request_record"] = {"status": "known", "value": "email dated January 10, 2030"}
+    assert ("As the Owner asked (per email dated January 10, 2030), the Contractor proposes to add a sample outlet."
+            in document_text(run(tmp_path, package, draft).path))
+
+
+def test_other_causes_print_the_description_as_written(tmp_path, package, draft):
+    draft["header"]["cause_category"] = {"status": "known", "value": "Field Condition"}
+    draft["description"] = {"status": "known", "value": "The Contractor proposes to repair a sample outlet."}
+    text = document_text(run(tmp_path, package, draft).path)
+    assert "The Contractor proposes to repair a sample outlet." in text and "As the Owner asked" not in text
+
+
+def test_request_on_file_is_worth_confirming_unless_supplied(tmp_path, package, draft):
+    assert "Request on file: how and when the Owner asked." in run(tmp_path, package, draft).needed
+    draft["backup"].append({"kind": "correspondence", "description": "owner-email.txt"})
+    assert "Request on file: how and when the Owner asked." not in run(tmp_path, package, draft).needed
+
+
+def test_internal_notes_reach_the_checklist_never_the_pco(tmp_path, package, draft):
+    draft["internal_notes"] = ["The carpentry is the PM's estimate of about eight hours."]
+    result = run(tmp_path, package, draft)
+    assert "Note for the PM: The carpentry is the PM's estimate of about eight hours." in result.needed
+    assert "estimate of about eight hours" not in document_text(result.path)
+
+
+INTERNAL_WORDS = re.compile(r"\b(PM|quotes?|subcontractors?|company carpenter|client)\b", re.I)
+
+
+def owner_text(path):
+    """The body of the Owner's PCO, without the header, footer and signature blocks."""
+    document = Document(path)
+    return "\n".join([p.text for p in document.paragraphs] +
+                     [c.text for t in document.tables[:-1] for r in t.rows for c in r.cells])
+
+
+def test_no_internal_words_on_the_owners_pco(tmp_path, package, draft):
+    draft["architect_signs"] = {"status": "unknown", "question": "Does the architect sign?"}
+    draft["internal_notes"] = ["The subcontractor's quote covers the outlet; the PM estimated the carpentry."]
+    assert not INTERNAL_WORDS.search(document_text(run(tmp_path, package, draft).path).replace("Prepared by", ""))
+
+
+def test_the_company_name_stays_out_of_the_letter(tmp_path, package, draft):
+    """Only the header, the notice box, the signature blocks and the footer name the company."""
+    document = Document(run(tmp_path, package, draft).path)
+    letter = [p.text for p in document.paragraphs if not p.text.startswith("NO WORK")]
+    letter += [c.text for r in pricing_table(document).rows for c in r.cells]
+    assert not any("Example Builders" in text or "EXAMPLE BUILDERS" in text for text in letter)
+    assert any("the Contractor" in text for text in letter)
+
+
+# Owner selections (PRO-34): referenced by ID, never attached
+
+def select(draft, status, ident=None, when=None):
+    draft["cost_lines"][1]["selection"] = {
+        "items": "Fixtures and trims", "status": status,
+        "id": {"status": "known", "value": ident} if ident else {"status": "unknown", "question": "Which selection?"},
+        "date": {"status": "known", "value": when} if when else {"status": "unknown", "question": "When approved?"}}
+
+
+@pytest.mark.parametrize("status,ident,when,line,item", [
+    ("approved", "SEL-12", "2030-01-08", "Fixtures and trims per Owner Selection SEL-12, approved January 8, 2030.", None),
+    ("approved_as_noted", "SEL-12", "2030-01-08",
+     "Fixtures and trims per Owner Selection SEL-12, approved as noted, January 8, 2030.",
+     "Owner selection: Confirm the notes on Owner Selection SEL-12 are reflected in this PCO."),
+    ("issued_with_pco", "SEL-12", None,
+     "Fixtures and trims per Owner Selection SEL-12, issued with this PCO for the Owner's signature.", None),
+    ("pending", "SEL-12", None, "Fixtures and trims per Owner Selection SEL-12, [approved on (date) / issued with this PCO].",
+     "Owner selection: Owner Selection SEL-12 is pending. Get it approved, or issue it with this PCO."),
+    ("unknown", None, None, "Fixtures and trims per Owner Selection [ID], [approved on (date) / issued with this PCO].",
+     "Owner selection: Which Owner Selection covers fixtures and trims, and is it approved?"),
+])
+def test_selections_are_referenced_in_the_scope(tmp_path, package, draft, status, ident, when, line, item):
+    select(draft, status, ident, when)
+    result = run(tmp_path, package, draft)
+    text = document_text(result.path)
+    assert line in text and "Exhibit" not in text
+    selection_items = [i for i in result.needed if i.startswith("Owner selection")]
+    assert selection_items == ([item] if item else [])
+
+
+def test_an_unknown_selection_is_asked_before_sending(tmp_path, package, draft):
+    select(draft, "unknown")
+    sending, _ = checklist_lines(tmp_path, package, draft)
+    assert "☐  Owner selection: Which Owner Selection covers fixtures and trims, and is it approved?" in sending
+
+
+# Checklist fixes from the live run
+
+def test_a_default_used_for_some_trades_counts_for_every_trade(tmp_path, package, draft):
+    default = package.definition["clarification_prompts"][0]["default"]["text"]
+    draft["clarifications_and_exclusions"] = [
+        {"prompt": "concealed_conditions", "trades": ["electrical"], "disposition": "excluded", "text": default},
+        {"prompt": "permits", "trades": ["all"], "disposition": "clarified", "text": "Permits are as stated."}]
+    result = run(tmp_path, package, draft)
+    assert not [f for f in result.flags if f.kind == "prompt_not_considered"]
+
+
+def test_questions_the_checklist_already_asks_are_dropped(tmp_path, package, draft):
+    draft["cost_lines"][1]["evidence"]["source"] = "pm_notes"
+    draft["open_questions"] = ["Can you supply the written quotes?",
+                               "Does the electrician's quote include the electrical permit?",
+                               "Has the Executive approved this under APPROVAL-SPEND?",
+                               "Is the outlet GFCI?"]
+    sending, confirming = checklist_lines(tmp_path, package, draft)
+    items = sending + confirming
+    assert "☐  Is the outlet GFCI?" in items
+    assert not any(q in i for i in items for q in ("supply the written quotes", "include the electrical permit",
+                                                   "approved this under"))

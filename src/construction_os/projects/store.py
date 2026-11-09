@@ -27,7 +27,7 @@ import yaml
 
 DEFAULT_ROOT = Path.home() / "construction-os" / "projects"
 PROJECT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-INPUT_KINDS = ("notes", "quote", "correspondence", "drawing")
+INPUT_KINDS = ("notes", "quote", "correspondence", "drawing", "selection")
 
 
 class ProjectError(Exception):
@@ -41,7 +41,7 @@ class ProjectIsolationError(ProjectError):
 @dataclass(frozen=True)
 class InputRecord:
     id: str             # notes-1, quote-1, quote-2 …: how the draft and its evidence refer to the input
-    kind: str           # notes | quote | correspondence | drawing
+    kind: str           # notes | quote | correspondence | drawing | selection
     file: str           # the stored file's name, inside inputs/
     original_name: str
     sha256: str

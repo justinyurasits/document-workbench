@@ -33,33 +33,29 @@ def build(root):
     loop(grid, "{%tr endfor %}")
     document.add_paragraph("{{ description }}")
     document.add_paragraph("NO WORK PROCEEDS UNTIL THE OWNER SIGNS AND {{ company_name_upper }} CO-SIGNS.")
-    document.add_paragraph("Reason: {{ reason }}")
-    document.add_paragraph("{%p if request_line %}")
-    document.add_paragraph("{{ request_line }}")
-    document.add_paragraph("{%p endif %}")
     document.add_paragraph("Included")
     bullets(document, "inclusions")
     document.add_paragraph("Deleted")
     bullets(document, "deleted_scope")
     bullets(document, "assumptions")
     bullets(document, "clarifications")
-    labels = ["Div.", "Category", "Description", "Att.", "Qty", "Unit", "Unit price", "Amount"]
-    pricing = document.add_table(rows=1, cols=8)
+    labels = ["Div.", "Category", "Description", "Qty", "Unit", "Unit price", "Amount"]
+    pricing = document.add_table(rows=1, cols=7)
     for cell, label in zip(pricing.rows[0].cells, labels):
         cell.text = label
     loop(pricing, "{%tr for line in lines %}")
-    fields = ["division", "category", "description", "attachment", "quantity", "unit", "unit_price", "amount"]
+    fields = ["division", "category", "description", "quantity", "unit", "unit_price", "amount"]
     for cell, name in zip(pricing.add_row().cells, fields):
         cell.text = "{{ line." + name + " }}"
     loop(pricing, "{%tr endfor %}")
     loop(pricing, "{%tr for row in summary %}")
     row = pricing.add_row()
-    row.cells[0].merge(row.cells[6]).text = "{{ row.label }}"
-    row.cells[7].text = "{{ row.amount }}"
+    row.cells[0].merge(row.cells[5]).text = "{{ row.label }}"
+    row.cells[6].text = "{{ row.amount }}"
     loop(pricing, "{%tr endfor %}")
     total = pricing.add_row()
-    total.cells[0].merge(total.cells[6]).text = "{{ total_label }}"
-    total.cells[7].text = "{{ total_amount }}"
+    total.cells[0].merge(total.cells[5]).text = "{{ total_label }}"
+    total.cells[6].text = "{{ total_amount }}"
     document.add_paragraph("{{ markup_basis }}")
     schedule = document.add_table(rows=0, cols=2)
     loop(schedule, "{%tr for row in schedule.rows %}")
@@ -69,9 +65,15 @@ def build(root):
     document.add_paragraph("{%p if schedule.sentence %}")
     document.add_paragraph("{{ schedule.sentence }}")
     document.add_paragraph("{%p endif %}")
+    document.add_paragraph("{%p if exhibits %}")
+    document.add_paragraph("5. ATTACHMENTS")
     bullets(document, "exhibits", "{{ item.mark }} {{ item.label }}")
-    document.add_paragraph("The Owner authorizes {{ company.name }} for {{ total_words }} ({{ total_figures }}), valid "
-                           "{{ validity_period }} through {{ validity_date }}, by PCCO-[###].")
+    document.add_paragraph("{%p endif %}")
+    document.add_paragraph("AUTHORIZATION AND SIGNATURES")
+    document.add_paragraph("The Owner authorizes the Contractor for {{ total_words }} ({{ total_figures }}).")
+    document.add_paragraph("Effective when the Owner signs and the Contractor co-signs.")
+    document.add_paragraph("Valid {{ validity_period }} through {{ validity_date }}.")
+    document.add_paragraph("Incorporated by PCCO-[###]; billable only after it is executed.")
     signers = document.add_table(rows=0, cols=2)
     loop(signers, "{%tr for block in signature_blocks %}")
     title = signers.add_row()

@@ -2,15 +2,13 @@
 
 Evidence follows where the figure was found: a supplied quote file is a supplied_quote; a quote the PM only
 mentions in the notes is pm_notes with basis quote, and the PM is asked for the written quote (principle 8:
-never cite a source that doesn't say it). Exhibits are lettered here: one per quoted line (a supplied quote file
-is one exhibit however many lines cite it), then the definition's standard exhibits. An exhibit is marked
-supplied only when a file of that kind is among the request's inputs. Clarifications that use the company's
-default get its approved text verbatim.
+never cite a source that doesn't say it). The PCO stands alone (CHG-53 2): quotes, the Owner's correspondence
+and Owner selections are filed as backup, never attached. Only an Owner-facing drawing becomes an exhibit, and
+only when it was supplied. Clarifications that use the company's default get its approved text verbatim.
 """
 import copy
 import re
 
-from construction_os.conditions import evaluate
 from construction_os.rendering.render import SIGNATURE_ORDER, Flag
 
 from .proposal import RATE_BASES
@@ -62,11 +60,13 @@ def assemble_draft(proposal, project, inputs, package, today):
         "attachments": [],
         "open_questions": proposal["open_questions"],
     }
+    if proposal.get("internal_notes"):
+        draft["internal_notes"] = proposal["internal_notes"]
     if "request_record" in proposal:
         draft["request_record"] = proposal["request_record"]
     if "repeat_client" in proposal:
         draft["repeat_client"] = proposal["repeat_client"]
-    letter_exhibits(draft, proposal, inputs, package)
+    file_documents(draft, proposal, inputs, package)
     if proposal["contract_language"]:
         quoted = " ".join(f"\"{item['excerpt']}\" ({source_name(by_id[item['input']])})"
                           for item in proposal["contract_language"])
@@ -97,52 +97,33 @@ def clarifications(items, definition):
     return result
 
 
-def quote_title(line, presentation):
-    party = (presentation.get("trade_parties") or {}).get(line["trade"])
-    template = (presentation.get("exhibits") or {}).get("quote")
-    if party and template:
-        return template.format(Party=party[0].upper() + party[1:], party=party)
-    return f"{line['trade'].capitalize()} quote"
+def file_documents(draft, proposal, inputs, package):
+    """Owner-facing drawings become attachments; everything else supplied is backup filed with the PCO.
 
-
-def letter_exhibits(draft, proposal, inputs, package):
-    """One exhibit per quoted line, then the standard exhibits. Supplied only when a file was actually given."""
+    A supplied Owner selection file means the selection goes to the Owner with this PCO: lines whose selection
+    isn't approved yet become issued_with_pco. The selection is still referenced by ID only, never attached.
+    """
     presentation = package.definition.get("presentation") or {}
-    attachments = []
-
-    def add(description, supplied, kind):
-        letter = chr(ord("A") + len(attachments))
-        attachments.append({"letter": letter, "description": description, "supplied": supplied, "kind": kind})
-        return letter
-
-    file_letters = {}
-    by_id = {record.id: record for record in inputs}
-    for line, proposed in zip(draft["cost_lines"], proposal["cost_lines"]):
-        if line["basis"] != "quote":
-            continue
-        amount = proposed.get("amount") or {}
-        source = by_id.get(amount.get("input"))
-        if source is not None and source.kind == "quote":
-            if source.id not in file_letters:
-                file_letters[source.id] = add(f"{quote_title(line, presentation)} ({source.original_name})", True, "quote")
-            line["attachment"] = known(file_letters[source.id])
-        else:
-            line["attachment"] = known(add(quote_title(line, presentation), False, "quote"))
+    attachments, backup = [], []
     for record in inputs:
-        if record.kind == "quote" and record.id not in file_letters:
-            file_letters[record.id] = add(f"Quote ({record.original_name})", True, "quote")
+        if record.kind == "drawing":
+            attachments.append({"letter": chr(ord("A") + len(attachments)), "description":
+                                f"Layout or drawings ({record.original_name})", "supplied": True, "kind": "drawing"})
+        elif record.kind in ("quote", "correspondence", "selection"):
+            backup.append({"kind": record.kind, "description": record.original_name, "file": record.file})
     requested = set(proposal.get("exhibits_needed") or [])
     for exhibit in (presentation.get("exhibits") or {}).get("standard", []):
-        files = [record.original_name for record in inputs if record.kind == exhibit.get("input_kind")]
-        if exhibit.get("applies_when") == "requested":
-            applies = exhibit["id"] in requested
-        else:
-            applies = evaluate(exhibit.get("applies_when"), draft, package.values) is not False
-        if files:
-            add(f"{exhibit['title']} ({', '.join(files)})", True, exhibit.get("input_kind") or "other")
-        elif applies:
-            add(exhibit["title"], False, exhibit.get("input_kind") or "other")
+        supplied = any(a["kind"] == exhibit.get("input_kind") for a in attachments)
+        if exhibit["id"] in requested and not supplied:
+            attachments.append({"letter": chr(ord("A") + len(attachments)), "description": exhibit["title"],
+                                "supplied": False, "kind": exhibit.get("input_kind") or "other"})
+    if any(record.kind == "selection" for record in inputs):
+        for line in draft["cost_lines"]:
+            selection = line.get("selection")
+            if selection and selection["status"] not in ("approved", "approved_as_noted"):
+                selection["status"] = "issued_with_pco"
     draft["attachments"] = attachments
+    draft["backup"] = backup
 
 
 def cost_line(line, inputs):
@@ -151,7 +132,9 @@ def cost_line(line, inputs):
                                          "permit")}
     if "role" in line:
         result["role"] = line["role"]
-    result["attachment"] = not_applicable("No attachment for this line.")   # quoted lines get their exhibit letter
+    if "selection" in line:
+        result["selection"] = copy.deepcopy(line["selection"])
+    result["attachment"] = not_applicable("Backup on file in the job folder, not attached.")
     if RATE_BASES.get(category) == basis:
         result["unit_price"] = not_applicable("From the company rate table.")
         result["evidence"] = {

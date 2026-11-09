@@ -25,6 +25,8 @@ def parse(argv):
     parser.add_argument("--correspondence", action="append", default=[],
                         help="the Owner's request (email or meeting notes, .txt or .pdf); repeatable")
     parser.add_argument("--drawing", action="append", default=[], help="a layout or drawing (any file); repeatable")
+    parser.add_argument("--selection", action="append", default=[],
+                        help="an Owner selection (PRO-34) issued with this PCO; filed as backup, never attached")
     parser.add_argument("--projects-dir", help="project store root (default: PROJECTS_DIR or ~/construction-os/projects)")
     parser.add_argument("--model", help="Claude model ID (default: DRAFT_MODEL or the built-in default)")
     parser.add_argument("--effort", help="effort level (default: DRAFT_EFFORT or high)")
@@ -40,11 +42,13 @@ def real_client(settings):
     return AnthropicDraftingClient(Settings.from_env(settings.model, settings.effort))
 
 
-def draft_request(package, store, project_id, project_name, notes, quotes, client, correspondence=(), drawings=()):
+def draft_request(package, store, project_id, project_name, notes, quotes, client, correspondence=(), drawings=(),
+                  selections=()):
     project = store.open(project_id) if store.exists(project_id) else store.create(project_id, project_name)
     records = [project.add_input("notes", notes)] + [project.add_input("quote", quote) for quote in quotes]
     records += [project.add_input("correspondence", path) for path in correspondence]
     records += [project.add_input("drawing", path) for path in drawings]
+    records += [project.add_input("selection", path) for path in selections]
     return draft_pco(project, package, records, client)
 
 
@@ -57,7 +61,7 @@ def main(argv=None, client_factory=None, out=sys.stdout, err=sys.stderr):
         store = FileProjectStore(args.projects_dir, forbidden=[package.root])
         client = factory(settings)
         result = draft_request(package, store, args.project, args.project_name, args.notes, args.quote, client,
-                               args.correspondence, args.drawing)
+                               args.correspondence, args.drawing, args.selection)
     except (DraftingError, ProjectError, InputError, OSError, ValueError) as error:
         print(f"Drafting failed: {error}", file=err)
         return 2
