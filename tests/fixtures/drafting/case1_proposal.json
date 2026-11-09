@@ -1,0 +1,52 @@
+{
+  "header": {
+    "project_address": {"status": "unknown", "question": "What is the project address?"},
+    "owner": {"status": "unknown", "question": "Who is the client?"},
+    "contract_reference": {"status": "unknown", "question": "Which contract does this change?"},
+    "location": {"status": "known", "value": "Living room ceiling"},
+    "trades": {"status": "known", "value": ["Electrical", "Drywall", "Painting", "Carpentry"]},
+    "change_event_ref": {"status": "unknown", "question": "Which change event does this PCO belong to?"},
+    "requested_approval_date": {"status": "unknown", "question": "By what date is the client's decision needed?"},
+    "cause_category": {"status": "known", "value": "Owner-Directed"}
+  },
+  "description": {"status": "known", "value": "Add six recessed LED lights to the living room ceiling. This was not in the original scope."},
+  "reason": {"status": "known", "value": "The homeowner asked for the added lighting."},
+  "scope": {
+    "inclusions": {"status": "known", "value": ["Six recessed LED lights, with wiring, switches and installation", "Opening the ceiling and coordinating the work", "Patching the ceiling", "Finishing the affected areas"]},
+    "deleted_scope": {"status": "known", "value": []},
+    "assumptions": ["No work has started.", "The electrician expects no effect on the completion date.", "Carpenter hours are the PM's estimate of about six hours."]
+  },
+  "clarifications_and_exclusions": [
+    {"prompt": "concealed_conditions", "trades": ["all"], "disposition": "excluded", "text": "Pricing is based on accessible ceiling cavities. Concealed conditions found on opening are excluded and will be priced separately."},
+    {"prompt": "finish_limited", "trades": ["all"], "disposition": "clarified", "text": "Painting is limited to the affected areas."},
+    {"prompt": "owner_upgrades", "trades": ["all"], "disposition": "open_question", "text": "Fixture, trim or dimmer upgrades: [state what is priced separately]."},
+    {"prompt": "permits", "trades": ["electrical"], "disposition": "open_question", "text": "Electrical permit: [included in the electrical quote / excluded]."},
+    {"prompt": "permits", "trades": ["drywall", "painting", "carpentry"], "disposition": "not_applicable", "text": "No permit for this trade."},
+    {"prompt": "hazardous_materials", "trades": ["all"], "disposition": "excluded", "text": "Hazardous materials found on opening are excluded and will be priced separately."}
+  ],
+  "pricing_basis": "lump_sum",
+  "nte_amount": {"status": "not_applicable", "reason": "Lump sum."},
+  "cost_lines": [
+    {"category": "subcontractors", "trade": "electrical", "division": {"status": "known", "value": "26"}, "description": "Electrical: fixtures, wiring, switches and installation",
+     "quantity": {"status": "known", "value": 1}, "unit": {"status": "known", "value": "LS"}, "basis": "quote", "permit": "not_stated",
+     "amount": {"status": "cited", "input": "notes-1", "excerpt": "The electrician quoted $2,850 for the fixtures, wiring, switches, and installation.", "value": 2850}},
+    {"category": "subcontractors", "trade": "drywall", "division": {"status": "known", "value": "09"}, "description": "Drywall: patch the ceiling",
+     "quantity": {"status": "known", "value": 1}, "unit": {"status": "known", "value": "LS"}, "basis": "quote", "permit": "not_applicable",
+     "amount": {"status": "cited", "input": "notes-1", "excerpt": "Our drywall subcontractor quoted $750 for patching the ceiling", "value": 750}},
+    {"category": "subcontractors", "trade": "painting", "division": {"status": "known", "value": "09"}, "description": "Painting: finish the affected areas",
+     "quantity": {"status": "known", "value": 1}, "unit": {"status": "known", "value": "LS"}, "basis": "quote", "permit": "not_applicable",
+     "amount": {"status": "cited", "input": "notes-1", "excerpt": "our painter quoted $500 to finish the affected areas", "value": 500}},
+    {"category": "labor", "role": "Carpenter", "trade": "carpentry", "division": {"status": "known", "value": "06"}, "description": "Carpenter: open the ceiling and coordinate",
+     "quantity": {"status": "known", "value": 6}, "unit": {"status": "known", "value": "HR"}, "basis": "hours_x_rate", "permit": "not_applicable"}
+  ],
+  "schedule": {
+    "extension_days": {"status": "known", "value": 0},
+    "contract_duration_days": {"status": "not_applicable", "reason": "No schedule extension."},
+    "critical_path": {"status": "known", "value": "no"},
+    "completion_date": {"status": "known", "value": "No change"},
+    "authorization_by": {"status": "unknown", "question": "By what date must the client authorize this for the schedule to hold?"}
+  },
+  "architect_signs": {"status": "unknown", "question": "Does the architect sign this PCO?"},
+  "contract_language": [],
+  "open_questions": ["Which fixtures and trims did the homeowner choose, and are dimmers included?"]
+}

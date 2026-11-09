@@ -10,3 +10,4 @@ dist/
 samples/rendered/
 build/
 .DS_Store
+/projects/

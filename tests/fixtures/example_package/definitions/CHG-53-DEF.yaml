@@ -8,3 +8,20 @@ clarification_prompts:
 permit_trades: [electrical]
 header_identity:
   - {label: Registration, path: licenses.contractor_registration}
+depends_on:
+  - {id: AUTH-WRITTEN, applies_when: always}
+  - {id: BILL-SUPPORTED, applies_when: always}
+  - {id: MARKUP-STRUCTURE, applies_when: always}
+  - {id: MARKUP-PRESENTATION, applies_when: always}
+  - {id: PCO-VALIDITY, applies_when: always}
+  - {id: company.name, applies_when: always}
+  - {id: role.Executive, applies_when: always}
+  - {id: LABOR-BILLING-RATES, applies_when: cost_lines include labor}
+  - {id: TAX-TREATMENT, applies_when: cost_lines include materials}
+  - {id: PERMIT-TREATMENT, applies_when: cost_lines include permits_and_fees}
+  - {id: GC-WEEKLY-RATES, applies_when: schedule_extension_percent_of_duration > GC-EXTENSION-THRESHOLD}
+  - {id: APPROVAL-SPEND, applies_when: subcontractor_commitment, audience: internal}
+inputs:
+  required: [project, change_description, reason, scope_inclusions]
+  asked_if_missing: [schedule_extension_days, quotes, quantities, architect_signs]
+cause_categories: [Owner-Directed, Field Condition]

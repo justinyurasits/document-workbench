@@ -364,49 +364,56 @@
       }
     },
     "architect_signs": {
-      "description": "Set from a supplied contract term or the PM.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "value",
-        "source",
-        "reference"
-      ],
-      "properties": {
-        "value": {
-          "type": "boolean"
-        },
-        "source": {
-          "enum": [
-            "contract_term",
-            "pm"
-          ]
-        },
-        "reference": {
-          "$ref": "#/$defs/text"
-        }
-      },
-      "if": {
-        "properties": {
-          "source": {
-            "const": "contract_term"
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "reference": {
-            "properties": {
-              "status": {
-                "const": "known"
-              }
+      "description": "Set from a supplied contract term or the PM. Unknown when neither says; the PCO then carries the architect's line, marked for the PM to keep or delete.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "source",
+            "reference"
+          ],
+          "properties": {
+            "value": {
+              "type": "boolean"
             },
-            "required": [
-              "value"
-            ]
+            "source": {
+              "enum": [
+                "contract_term",
+                "pm"
+              ]
+            },
+            "reference": {
+              "$ref": "#/$defs/text"
+            }
+          },
+          "if": {
+            "properties": {
+              "source": {
+                "const": "contract_term"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reference": {
+                "properties": {
+                  "status": {
+                    "const": "known"
+                  }
+                },
+                "required": [
+                  "value"
+                ]
+              }
+            }
           }
+        },
+        {
+          "$ref": "#/$defs/unknown"
         }
-      }
+      ]
     }
   },
   "$defs": {

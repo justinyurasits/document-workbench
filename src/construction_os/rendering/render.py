@@ -20,6 +20,8 @@ SIGNATURE_ORDER = {
     "after_client": ["client", "executive_cosign", "contractor_pm"],
 }
 CHECKLIST_TITLE = "PM checklist — not for the client"
+# Flags the PM must read before anything else: sending the draft as is would be wrong.
+URGENT_FLAGS = ("contract_terms_not_applied",)
 BODY_SIZE, SMALL_SIZE = 19, 15  # half-points
 HEADER_FIELDS = [("pco_number", "PCO number", "[PCO-###]"), ("date", "Date", "[Date]"), ("project", "Project", "[Project name]"),
                  ("project_address", "Address", "[Project address]"), ("owner", "Client", "[Client name]"),
@@ -223,7 +225,12 @@ def signature_rows(draft, package, needs):
         "architect": ("Architect", "[Architect name]", BODY_SIZE),
         "contractor_pm": ("Prepared by", pm or "[Project manager name]", SMALL_SIZE),
     }
-    if draft["architect_signs"]["value"]:
+    architect = draft["architect_signs"]
+    if architect.get("status") == "unknown":   # An extra line is easy to delete; a missing one is easy to miss.
+        parties["architect"] = ("Architect", "[if the architect signs]", BODY_SIZE)
+        order.insert(order.index("contractor_pm"), "architect")
+        needs.add("Architect", architect["question"])
+    elif architect["value"]:
         order.insert(order.index("contractor_pm"), "architect")
         needs.add("Architect", "Who signs for the architect?")
     if not pm:
@@ -430,7 +437,8 @@ def render_checklist(result, draft, package, out):
     for question in draft.get("open_questions") or []:
         if question not in questions:
             questions.append(question)
-    others = [flag for flag in result.flags if flag.kind not in ("missing_input", "permit_question")]
+    urgent = [flag for flag in result.flags if flag.kind in URGENT_FLAGS]
+    others = [flag for flag in result.flags if flag.kind not in ("missing_input", "permit_question", *URGENT_FLAGS)]
     font = Document(package.template).styles["Normal"].font.name
     document = Document()
     document.styles["Normal"].font.name = font
@@ -444,6 +452,10 @@ def render_checklist(result, draft, package, out):
 
     line(CHECKLIST_TITLE, size=15, bold=True, after=2)
     line(f"For {result.path.name}. Clear these before sending the PCO.", after=10)
+    if urgent:
+        line("Read first", size=11.5, bold=True)
+        for flag in urgent:
+            line(f"☐  {flag.message}", bold=True)
     line("Open questions", size=11.5, bold=True)
     for question in questions or ["None"]:
         line(f"☐  {question}")
