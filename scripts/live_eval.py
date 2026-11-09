@@ -102,7 +102,7 @@ def main(argv=None):
             continue
         started = time.monotonic()
         try:
-            result = draft_request(package, store, f"eval-{case.name}-{stamp}", expected["title"],
+            result = draft_request(package, store, f"eval-{case.name}-{stamp}", None,   # name unknown: [Project name]
                                    case / "request.md", [], client)
         except DraftingError as error:
             failures += 1

@@ -11,7 +11,6 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from docx import Document
 from pypdf import PdfWriter
 
 from construction_os.drafting import DraftingError, FakeDraftingClient, draft_pco, text_turn, tool_turn
@@ -20,6 +19,7 @@ from construction_os.drafting.client import ModelTurn
 from construction_os.projects import FileProjectStore, ProjectIsolationError
 from construction_os.rendering import document_text, load_package
 from construction_os.validate import draft_schema_errors
+from docx_helpers import parties, summary_rows
 
 CORPUS = Path(os.environ.get("CORPUS", Path(__file__).resolve().parents[2] / "construction-os-corpus"))
 CASES = CORPUS / "tests" / "acceptance" / "cases"
@@ -61,7 +61,7 @@ def proposal():
     return {
         "header": {
             "project_address": unknown("What is the project address?"),
-            "owner": unknown("Who is the client?"),
+            "owner": unknown("Who is the owner?"),
             "contract_reference": unknown("Which contract does this change?"),
             "location": known("Garage, north wall"),
             "trades": known(["Electrical", "Carpentry"]),
@@ -126,16 +126,14 @@ def test_valid_output_is_priced_rendered_and_recorded(store, package, tmp_path):
     assert [line.amount for line in result.priced.lines] == [D("640.00"), D("800.00")]
     assert (result.priced.subtotal, result.priced.markup, result.priced.total) == (D("1440.00"), D("216.00"), D("1656.00"))
     assert result.docx_path.exists() and result.checklist_path.exists()
-    rows = {r.cells[0].text: r.cells[7].text for r in next(t for t in Document(result.docx_path).tables
-                                                           if t.rows[0].cells[0].text == "Div").rows[1:]}
-    assert rows["Total"] == "$1,656.00"
+    assert summary_rows(result.docx_path)["Total"] == "$1,656.00"
     manifest = json.loads(result.manifest_path.read_text())
     assert manifest["model"]["requested"] == "fake-model" and manifest["model"]["prompt_version"].startswith("pco-draft-1+")
     assert manifest["definition"]["sha256"] and manifest["definition"]["version"] is None
     assert manifest["inputs"][0]["id"] == "notes-1" and len(manifest["inputs"][0]["sha256"]) == 64
     sources = {s["id"]: s for s in manifest["sources"]}
     assert sources["AUTH-WRITTEN"]["kind"] == "rule" and sources["AUTH-WRITTEN"]["applies"] is True
-    assert sources["TAX-TREATMENT"]["applies"] is False and sources["APPROVAL-SPEND"]["applies"] is None
+    assert sources["TAX-TREATMENT"]["applies"] is False and sources["APPROVAL-SPEND"]["applies"] is True
     assert manifest["parameters"]["MARKUP-PRESENTATION"] == "itemized"
     assert manifest["pricing"]["total"] == "1656.00" and manifest["attempts"][0]["errors"] == []
 
@@ -267,8 +265,11 @@ def test_a_quote_mentioned_only_in_the_notes_is_pm_notes_and_asks_for_the_quote(
     result, _, _ = run(store, package, tmp_path, proposal())
     line = json.loads(result.draft_path.read_text())["cost_lines"][0]
     assert (line["basis"], line["evidence"]["source"]) == ("quote", "pm_notes")
-    assert line["attachment"]["status"] == "unknown"
-    assert "Get the written quote" in document_text(result.checklist_path)
+    draft = json.loads(result.draft_path.read_text())
+    assert line["attachment"] == known("A")
+    assert draft["attachments"][0] == {"letter": "A", "description": "Electrician's quote", "supplied": False, "kind": "quote"}
+    assert "Exhibit A (Electrician's quote): Attach the file." in document_text(result.checklist_path)
+    assert "☐ Exhibit A — Electrician's quote" in document_text(result.docx_path)
 
 
 def test_a_supplied_quote_file_is_cited_as_a_supplied_quote_with_a_letter(store, package, tmp_path):
@@ -284,7 +285,13 @@ def test_a_supplied_quote_file_is_cited_as_a_supplied_quote_with_a_letter(store,
     draft = json.loads(result.draft_path.read_text())
     line = draft["cost_lines"][0]
     assert line["evidence"]["source"] == "supplied_quote" and line["evidence"]["reference"]["value"] == "sparkline-quote.txt"
-    assert line["attachment"] == known("A") and draft["attachments"] == [{"letter": "A", "description": "sparkline-quote.txt"}]
+    assert line["attachment"] == known("A")
+    assert draft["attachments"] == [
+        {"letter": "A", "description": "Electrician's quote (sparkline-quote.txt)", "supplied": True, "kind": "quote"},
+        {"letter": "B", "description": "Owner request correspondence", "supplied": False, "kind": "correspondence"}]
+    text = document_text(result.docx_path)
+    assert "☒ Exhibit A — Electrician's quote (sparkline-quote.txt)" in text
+    assert "☐ Exhibit B — Owner request correspondence" in text
     assert result.priced.lines[0].amount == D("640.00")
 
 
@@ -312,7 +319,7 @@ def test_contract_language_is_flagged_first_and_not_applied(store, package, tmp_
     assert result.flags[0].kind == "contract_terms_not_applied"
     assert result.priced.total == D("1656.00")                    # company standard, not the contract
     checklist = document_text(result.checklist_path).split("\n")
-    assert checklist[2] == "Read first" and "does NOT apply" in checklist[3]
+    assert checklist[2] == "Before sending" and "does NOT apply" in checklist[3]
 
 
 def test_a_dollar_figure_in_scope_text_is_flagged(store, package, tmp_path):
@@ -324,8 +331,7 @@ def test_a_dollar_figure_in_scope_text_is_flagged(store, package, tmp_path):
 
 def test_an_unknown_architect_gets_a_marked_line(store, package, tmp_path):
     result, _, _ = run(store, package, tmp_path, proposal())
-    table = next(t for t in Document(result.docx_path).tables if t.rows[0].cells[0].text == "Party")
-    assert [r.cells[1].text for r in table.rows if r.cells[0].text == "Architect"] == ["[if the architect signs]"]
+    assert "ARCHITECT (IF REQUIRED BY CONTRACT)" in parties(result.docx_path)
 
 
 # Project isolation
@@ -408,3 +414,114 @@ def test_tests_cannot_build_the_real_client():
 
     with pytest.raises(AssertionError, match="real Claude client"):
         AnthropicDraftingClient(Settings())
+
+
+# PCO polish: approved clarification defaults, exhibits, the request record and the checklist
+
+FIXTURE_DEFAULT = "Example Builders excludes hidden conditions found on opening; they are priced separately."
+
+
+def test_a_default_clarification_is_inserted_verbatim(store, package, tmp_path):
+    defaulted = proposal()
+    defaulted["clarifications_and_exclusions"][0] = {"prompt": "concealed_conditions", "trades": ["all"],
+                                                     "use_default": True}
+    result, _, _ = run(store, package, tmp_path, defaulted)
+    item = json.loads(result.draft_path.read_text())["clarifications_and_exclusions"][0]
+    assert item == {"prompt": "concealed_conditions", "trades": ["all"], "disposition": "excluded", "text": FIXTURE_DEFAULT}
+    assert FIXTURE_DEFAULT in document_text(result.docx_path)
+
+
+@pytest.mark.parametrize("item,error", [
+    ({"prompt": "permits", "trades": ["all"], "use_default": True}, "has no company default"),
+    ({"prompt": "concealed_conditions", "trades": ["all"], "use_default": True, "text": "Reworded."}, "leave disposition and text out"),
+    ({"prompt": "concealed_conditions", "trades": ["all"]}, "give disposition and text"),
+])
+def test_a_misused_default_is_rejected(store, package, tmp_path, item, error):
+    wrong = proposal()
+    wrong["clarifications_and_exclusions"][0] = item
+    _, client, _ = run(store, package, tmp_path, wrong, proposal())
+    assert error in last_feedback(client)
+
+
+def test_supplied_correspondence_and_drawings_are_checked_exhibits(store, package, tmp_path):
+    project = store.create("P-010", "Garage")
+    notes = add_notes(project, tmp_path)
+    email = tmp_path / "owner-email.txt"
+    email.write_text("Please add two outlets in the garage. — the Owner")
+    drawing = tmp_path / "layout.png"
+    drawing.write_bytes(b"\x89PNG not really an image")
+    records = [notes, project.add_input("correspondence", email), project.add_input("drawing", drawing)]
+    client = FakeDraftingClient([tool_turn(proposal())])
+    result = draft_pco(project, package, records, client)
+    text = document_text(result.docx_path)
+    assert "☒ Exhibit B — Owner request correspondence (owner-email.txt)" in text
+    assert "☒ Exhibit C — Layout or drawings (layout.png)" in text
+    sent = json.dumps(client.requests)
+    assert "Please add two outlets" in sent and "not really an image" not in sent    # drawings aren't sent
+
+
+def test_a_requested_layout_is_an_unchecked_exhibit(store, package, tmp_path):
+    wants_layout = proposal()
+    wants_layout["exhibits_needed"] = ["layout_or_drawings"]
+    result, _, _ = run(store, package, tmp_path, wants_layout)
+    assert "☐ Exhibit C — Layout or drawings" in document_text(result.docx_path)
+    assert "Exhibit C (Layout or drawings): Attach the file." in document_text(result.checklist_path)
+
+
+def test_an_unknown_exhibit_is_rejected(store, package, tmp_path):
+    wrong = proposal()
+    wrong["exhibits_needed"] = ["site_photos"]
+    _, client, _ = run(store, package, tmp_path, wrong, proposal())
+    assert "'site_photos' isn't one of the exhibits that can be requested" in last_feedback(client)
+
+
+def test_a_known_request_record_is_stated(store, package, tmp_path):
+    recorded = proposal()
+    recorded["request_record"] = known("email dated January 10, 2030")
+    result, _, _ = run(store, package, tmp_path, recorded)
+    assert "Requested by the Owner (per email dated January 10, 2030)." in document_text(result.docx_path)
+
+
+def test_cli_takes_correspondence_and_drawings(tmp_path, example_root):
+    notes, email, drawing = tmp_path / "notes.txt", tmp_path / "email.txt", tmp_path / "plan.pdf"
+    notes.write_text(NOTES)
+    email.write_text("Owner email.")
+    drawing.write_bytes(b"%PDF-1.4 not parsed")
+    fake = FakeDraftingClient([tool_turn(proposal())])
+    out = io.StringIO()
+    code = cli.main(["--corpus", str(example_root), "--project", "P-001", "--notes", str(notes),
+                     "--correspondence", str(email), "--drawing", str(drawing),
+                     "--projects-dir", str(tmp_path / "projects")], client_factory=lambda s: fake, out=out, err=io.StringIO())
+    assert code == 0
+    kinds = [r.kind for r in FileProjectStore(tmp_path / "projects").open("P-001").inputs()]
+    assert kinds == ["notes", "correspondence", "drawing"]
+
+
+@needs_corpus
+def test_case_1_checklist_has_one_item_per_fact(store):
+    result = corpus_case(store, "01_added_lighting", "case1_proposal.json")
+    lines = [l for l in document_text(result.checklist_path).split("\n") if l.startswith("☐")]
+    normalized = [" ".join(l.lower().split()) for l in lines]
+    assert len(set(normalized)) == len(normalized)
+    assert sum("owner" in l and "who is" in l for l in normalized) == 1
+
+
+@needs_corpus
+def test_live_script_leaves_the_project_name_unknown(tmp_path, monkeypatch):
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import live_eval
+
+    names = []
+
+    def capture(package, store, project_id, project_name, *args, **kwargs):
+        names.append(project_name)
+        raise DraftingError("stopped by the test")
+
+    monkeypatch.setattr(live_eval, "draft_request", capture)
+    from types import SimpleNamespace
+
+    from construction_os.drafting import Settings
+    monkeypatch.setattr(live_eval, "real_client", lambda settings: SimpleNamespace(settings=Settings()))
+    live_eval.main(["--corpus", str(CORPUS), "--cases", "1", "--keep", str(tmp_path / "store")])
+    assert names == [None]

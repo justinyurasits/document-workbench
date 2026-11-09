@@ -3,7 +3,9 @@ procedure: CHG-53
 sections:
   - {id: signatures, fields: [executive_cosign, client, contractor_pm]}
 clarification_prompts:
-  - {id: concealed_conditions, prompt: Concealed conditions}
+  - id: concealed_conditions
+    prompt: Concealed conditions
+    default: {disposition: excluded, text: "Example Builders excludes hidden conditions found on opening; they are priced separately."}
   - {id: permits, prompt: Permits}
 permit_trades: [electrical]
 header_identity:
@@ -25,3 +27,35 @@ inputs:
   required: [project, change_description, reason, scope_inclusions]
   asked_if_missing: [schedule_extension_days, quotes, quantities, architect_signs]
 cause_categories: [Owner-Directed, Field Condition]
+presentation:                    # fictional wording, so tests prove the PCO reads what the package says
+  category_labels: {labor: Own crew, subcontractors: Trade partner, materials: Materials, equipment: Equipment, general_conditions: General conditions, permits_and_fees: Permits and fees}
+  basis_phrases:
+    quote: "per {party}'s quote"
+    quote_no_party: "per {trade} quote"
+    hours_x_rate: "{quantity} hours at the house rate"
+    weeks_x_rate: "{quantity} weeks at the house weekly rate"
+    rate_x_duration: "{quantity} {unit} at the house rate"
+    estimate: estimate
+    actual_fee: actual fee
+  trade_parties: {electrical: electrician, carpentry: carpenter}
+  total_labels: {add: "Change total: add", deduct: "Change total: deduct"}
+  request_line:
+    applies_to: [Owner-Directed]
+    known: "Requested by the Owner (per {record})."
+    unknown: "Requested by the Owner (per [email / meeting] dated [date])."
+  schedule_no_change:
+    impact: No change to the completion date
+    sentence: "No schedule impact, if authorized by {date}."
+  exhibits:
+    quote: "{Party}'s quote"
+    standard:
+      - {id: owner_request, title: Owner request correspondence, input_kind: correspondence, applies_when: cause_category is Owner-Directed}
+      - {id: layout_or_drawings, title: Layout or drawings, input_kind: drawing, applies_when: requested}
+  signature_titles:
+    executive_cosign: "{company}"
+    client: Owner
+    architect_if_required: Architect (if required by contract)
+    architect: Architect
+    contractor_pm: Prepared by
+checklist:
+  before_sending: [header.owner, header.project_address, header.pco_number, header.project, attachment.quote, permit, contract_terms_not_applied, placeholder, incomplete_pricing, unsupported_price, price_in_scope_text, rule.APPROVAL-SPEND]

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 import yaml
-from docx import Document
 
 from construction_os.rendering import load_package, render
+from docx_helpers import summary_rows
 
 CORPUS = Path(os.environ.get("CORPUS", Path(__file__).resolve().parents[2] / "construction-os-corpus"))
 ROOT = CORPUS / "tests" / "acceptance" / "cases"
@@ -75,8 +75,7 @@ def test_sample_draft_renders_to_the_expected_result(tmp_path, case):
     data = expected(case)
     pricing = data["exact"]["pricing"]
     result = render(json.loads((CORPUS / data["sample_draft"]).read_text()), load_package(CORPUS), tmp_path / "x.docx")
-    table = next(t for t in Document(result.path).tables if t.rows[0].cells[0].text == "Div")
-    rows = {r.cells[0].text: r.cells[7].text for r in table.rows[1:] if r.cells[0]._tc is r.cells[6]._tc}
+    rows = summary_rows(result.path)
     assert rows["Subtotal"] == f"${Decimal(pricing['subtotal']):,.2f}" and rows["Total"] == f"${Decimal(pricing['total']):,.2f}"
     for component in pricing["markup"]:
         assert rows[f"{component['name']} ({component['percent']}%)"] == f"${Decimal(component['amount']):,.2f}"

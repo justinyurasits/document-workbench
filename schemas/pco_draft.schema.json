@@ -84,6 +84,10 @@
     "reason": {
       "$ref": "#/$defs/text"
     },
+    "request_record": {
+      "$ref": "#/$defs/text",
+      "description": "How the Owner's request arrived (email or meeting, and its date). Optional; when unknown the PCO shows a bracketed blank."
+    },
     "scope": {
       "type": "object",
       "additionalProperties": false,
@@ -193,6 +197,18 @@
           "description": {
             "type": "string",
             "minLength": 1
+          },
+          "supplied": {
+            "type": "boolean",
+            "description": "True only when the file was actually supplied. Never checked otherwise."
+          },
+          "kind": {
+            "enum": [
+              "quote",
+              "correspondence",
+              "drawing",
+              "other"
+            ]
           }
         }
       }

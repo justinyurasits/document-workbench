@@ -15,13 +15,14 @@ from construction_os.rendering import render, render_checklist
 from construction_os.validate import DEFINITION
 
 from .assemble import assemble_draft
-from .conditions import evaluate
+from construction_os.conditions import evaluate
 from .config import prompt_version
 from .context import build_context
 from .inputs import input_text
 from .proposal import TOOL_NAME, check_proposal, draft_schema, proposal_schema, schema_errors, tool_definition
 
 ATTEMPTS = 2
+TEXT_KINDS = ("notes", "quote", "correspondence")   # drawings are exhibits only; the model doesn't read them
 
 
 class DraftingError(Exception):
@@ -52,7 +53,7 @@ def user_message(project, records, texts, today):
     return "\n\n".join(parts)
 
 
-def review(turn, schema, texts, roles):
+def review(turn, schema, texts, roles, definition=None):
     """(proposal, tool_use_ids, errors) for one model turn."""
     if turn.stop_reason == "refusal":
         raise DraftingError("The model declined to draft this request.")
@@ -65,7 +66,7 @@ def review(turn, schema, texts, roles):
     if len(uses) > 1:
         return None, ids, [f"{TOOL_NAME} was called {len(uses)} times. Call it exactly once."]
     proposal = uses[0]["input"]
-    return proposal, ids, check_proposal(proposal, schema, texts, roles)
+    return proposal, ids, check_proposal(proposal, schema, texts, roles, definition)
 
 
 def propose(client, context, schema, texts, message):
@@ -76,7 +77,7 @@ def propose(client, context, schema, texts, message):
     attempts = []
     for number in range(1, ATTEMPTS + 1):
         turn = client.send(system, messages, tools)
-        proposal, ids, errors = review(turn, schema, texts, context.roles)
+        proposal, ids, errors = review(turn, schema, texts, context.roles, context.definition)
         attempts.append({"attempt": number, "model": turn.model, "stop_reason": turn.stop_reason,
                          "request_id": turn.request_id, "usage": turn.usage, "errors": errors})
         if not errors:
@@ -103,8 +104,9 @@ def draft_pco(project, package, records, client, today=None):
     today = today or date.today()
     context = build_context(package)
     schema = proposal_schema()
-    texts = {record.id: input_text(project, record) for record in records}
-    proposal, attempts, _ = propose(client, context, schema, texts, user_message(project, records, texts, today))
+    readable = [record for record in records if record.kind in TEXT_KINDS]
+    texts = {record.id: input_text(project, record) for record in readable}
+    proposal, attempts, _ = propose(client, context, schema, texts, user_message(project, readable, texts, today))
     draft, flags = assemble_draft(proposal, project, records, package, today)
     errors = schema_errors(draft, draft_schema())
     if errors:
