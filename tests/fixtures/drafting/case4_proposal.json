@@ -1,0 +1,56 @@
+{
+  "header": {
+    "project_address": {"status": "unknown", "question": "What is the project address?"},
+    "owner": {"status": "unknown", "question": "Who is the client?"},
+    "contract_reference": {"status": "unknown", "question": "Which contract does this change?"},
+    "location": {"status": "unknown", "question": "Where on the house is the new door?"},
+    "trades": {"status": "known", "value": ["Carpentry", "Electrical"]},
+    "change_event_ref": {"status": "unknown", "question": "Which change event does this PCO belong to?"},
+    "requested_approval_date": {"status": "unknown", "question": "By what date is the client's decision needed?"},
+    "cause_category": {"status": "known", "value": "Owner-Directed"}
+  },
+  "description": {"status": "known", "value": "Add a new exterior door."},
+  "reason": {"status": "known", "value": "Owner-directed change."},
+  "scope": {
+    "inclusions": {"status": "known", "value": ["Cut and frame the opening", "Install the new door", "Electrical modifications", "Interior and exterior trim", "Finish repairs"]},
+    "deleted_scope": {"status": "known", "value": []},
+    "assumptions": ["Carpenter labor is carried at the amount given, with no hours stated."]
+  },
+  "clarifications_and_exclusions": [
+    {"prompt": "concealed_conditions", "trades": ["all"], "disposition": "open_question", "text": "Concealed conditions at the new opening: [state what is excluded]."},
+    {"prompt": "finish_limited", "trades": ["all"], "disposition": "open_question", "text": "Finish repairs are limited to [the affected areas]."},
+    {"prompt": "owner_upgrades", "trades": ["all"], "disposition": "open_question", "text": "Owner upgrades to the door or trim: [state what is priced separately]."},
+    {"prompt": "permits", "trades": ["carpentry", "permit"], "disposition": "clarified", "text": "Building permit is carried at actual cost."},
+    {"prompt": "permits", "trades": ["electrical"], "disposition": "open_question", "text": "Electrical permit: [included in the electrical quote / excluded]."},
+    {"prompt": "hazardous_materials", "trades": ["all"], "disposition": "open_question", "text": "Hazardous materials at the opening: [state what is excluded]."}
+  ],
+  "pricing_basis": "lump_sum",
+  "nte_amount": {"status": "not_applicable", "reason": "Lump sum."},
+  "cost_lines": [
+    {"category": "materials", "trade": "carpentry", "division": {"status": "known", "value": "08"}, "description": "Door and associated materials",
+     "quantity": {"status": "known", "value": 1}, "unit": {"status": "known", "value": "LS"}, "basis": "estimate", "permit": "not_applicable",
+     "amount": {"status": "cited", "input": "notes-1", "excerpt": "Door and associated materials: $2,400", "value": 2400}},
+    {"category": "labor", "role": "Carpenter", "trade": "carpentry", "division": {"status": "known", "value": "06"}, "description": "Carpenter labor",
+     "quantity": {"status": "known", "value": 1}, "unit": {"status": "known", "value": "LS"}, "basis": "estimate", "permit": "not_applicable",
+     "amount": {"status": "cited", "input": "notes-1", "excerpt": "Carpenter labor: $900", "value": 900}},
+    {"category": "subcontractors", "trade": "electrical", "division": {"status": "known", "value": "26"}, "description": "Electrical",
+     "quantity": {"status": "known", "value": 1}, "unit": {"status": "known", "value": "LS"}, "basis": "quote", "permit": "not_stated",
+     "amount": {"status": "cited", "input": "notes-1", "excerpt": "Electrical subcontractor quote: $1,600", "value": 1600}},
+    {"category": "permits_and_fees", "trade": "permit", "division": {"status": "known", "value": "01"}, "description": "Building permit",
+     "quantity": {"status": "known", "value": 1}, "unit": {"status": "known", "value": "LS"}, "basis": "actual_fee", "permit": "not_applicable",
+     "amount": {"status": "cited", "input": "notes-1", "excerpt": "Building permit: $200", "value": 200}}
+  ],
+  "schedule": {
+    "extension_days": {"status": "known", "value": 0},
+    "contract_duration_days": {"status": "not_applicable", "reason": "No schedule extension."},
+    "critical_path": {"status": "known", "value": "no"},
+    "completion_date": {"status": "known", "value": "No change"},
+    "authorization_by": {"status": "unknown", "question": "By what date must the client authorize this for the schedule to hold?"}
+  },
+  "architect_signs": {"status": "unknown", "question": "Does the architect sign this PCO?"},
+  "contract_language": [
+    {"input": "notes-1", "excerpt": "For owner-directed changes, Contractor may apply eight percent (8%) overhead and five percent (5%) profit to the direct costs of labor, materials, and subcontracted work."},
+    {"input": "notes-1", "excerpt": "Permit fees shall be passed through at actual cost without markup."}
+  ],
+  "open_questions": []
+}

@@ -7,7 +7,8 @@ name = "construction-os"
 version = "0.1.0"
 description = "Construction OS application: generates governed construction documents from a customer package."
 requires-python = ">=3.12,<3.13"
-dependencies = ["PyYAML>=6.0", "jsonschema>=4.20", "docxtpl>=0.20", "python-docx>=1.1"]
+dependencies = ["PyYAML>=6.0", "jsonschema>=4.20", "docxtpl>=0.20", "python-docx>=1.1", "anthropic>=2.6",
+                "pypdf>=5.0", "python-dotenv>=1.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

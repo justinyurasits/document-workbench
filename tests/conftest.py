@@ -78,3 +78,20 @@ def example_root(tmp_path) -> Path:
 @pytest.fixture
 def example_draft_text() -> str:
     return (Path(__file__).parent / "fixtures/example_package/samples/pco_example_draft.json").read_text()
+
+
+@pytest.fixture(autouse=True)
+def no_real_claude(monkeypatch):
+    """CI never calls the API: no test may build the real Claude client or load .env."""
+    import anthropic
+    import dotenv
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("a test tried to construct the real Claude client")
+
+    def no_env(*args, **kwargs):
+        raise AssertionError("a test tried to load .env")
+
+    monkeypatch.setattr(anthropic.Anthropic, "__init__", refuse)
+    monkeypatch.setattr(dotenv, "load_dotenv", no_env)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)

@@ -185,6 +185,15 @@ def test_architect_row_when_true(tmp_path, package, draft):
     assert any("architect" in item for item in result.needed)
 
 
+def test_architect_row_marked_when_unknown(tmp_path, package, draft):
+    draft["architect_signs"] = {"status": "unknown", "question": "Does the architect sign this PCO?"}
+    result = run(tmp_path, package, draft)
+    table = table_with(result.path, "Party")
+    assert parties(result.path) == ["Example Builders", "Client", "Architect", "Prepared by"]
+    assert table.rows[3].cells[1].text == "[if the architect signs]"
+    assert "Architect: Does the architect sign this PCO?" in result.needed
+
+
 # Bracketed blanks and the checklist
 
 def test_unconfirmed_fields_are_bracketed_blanks(tmp_path, package, draft):
