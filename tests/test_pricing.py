@@ -8,11 +8,11 @@ from pathlib import Path
 
 import pytest
 import yaml
-from docx import Document
 
 from construction_os.pricing import find_evidence, price
 from construction_os.rendering import document_text, load_package, render, render_checklist
 from construction_os.validate import draft_schema_errors
+from docx_helpers import pricing_table, summary_rows
 
 CORPUS = Path(os.environ.get("CORPUS", Path(__file__).resolve().parents[2] / "construction-os-corpus"))
 CASES = CORPUS / "tests" / "acceptance" / "cases"
@@ -373,8 +373,7 @@ def test_a_draft_with_roles_gc_lines_and_repeat_client_is_valid(tmp_path, draft)
 
 
 def summary(path):
-    table = next(t for t in Document(path).tables if t.rows[0].cells[0].text == "Div")
-    return {r.cells[0].text: r.cells[7].text for r in table.rows[1:] if r.cells[0]._tc is r.cells[6]._tc}, table
+    return summary_rows(path), pricing_table(path)
 
 
 def test_renderer_shows_prorated_gc_and_the_engines_rate(tmp_path, example_root, draft):
@@ -384,8 +383,9 @@ def test_renderer_shows_prorated_gc_and_the_engines_rate(tmp_path, example_root,
     rows, table = summary(result.path)
     assert rows["Total"] == "$9,692.86"
     texts = [[c.text for c in r.cells] for r in table.rows]
-    assert any("Supervision" in r and "1.57" in r and "$2,828.57" in r for r in texts)
-    assert any("Sample carpentry" in r and "$100.00" in r for r in texts)
+    assert any(r[2] == "Supervision (1.57 weeks at the house weekly rate)" and "1.57" in r and "$2,828.57" in r
+               for r in texts)
+    assert any(r[2] == "Sample carpentry (8 hours at the house rate)" and "$100.00" in r for r in texts)
     checklist = document_text(render_checklist(result, draft, load_package(example_root), tmp_path / "check.docx"))
     assert "differs from the company rate" in checklist
 

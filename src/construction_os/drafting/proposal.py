@@ -34,6 +34,10 @@ def proposal_schema():
     for name in ("unit_price", "evidence", "attachment"):
         del line["properties"][name]
         line["required"].remove(name)
+    clarification = defs["clarification"]
+    clarification["required"] = ["prompt", "trades"]
+    clarification["properties"]["use_default"] = {
+        "const": True, "description": "Use the company's approved text for this prompt; leave disposition and text out."}
     line["properties"]["amount"] = {
         "description": "Only for lines not priced from a rate table: the amount copied from an input, or unknown.",
         "oneOf": [
@@ -48,13 +52,16 @@ def proposal_schema():
         del header["properties"][name]
         header["required"].remove(name)
     props = draft["properties"]
-    keep = ("description", "reason", "scope", "clarifications_and_exclusions", "pricing_basis", "schedule",
-            "open_questions", "repeat_client")
+    keep = ("description", "reason", "request_record", "scope", "clarifications_and_exclusions", "pricing_basis",
+            "schedule", "open_questions", "repeat_client")
     properties = {name: copy.deepcopy(props[name]) for name in keep}
     properties["header"] = header
     properties["nte_amount"] = {"oneOf": [{"$ref": "#/$defs/unknown"}, {"$ref": "#/$defs/not_applicable"}]}
     properties["cost_lines"] = {"type": "array", "items": {"$ref": "#/$defs/cost_line"}}
     properties["architect_signs"] = {"$ref": "#/$defs/boolean"}
+    properties["exhibits_needed"] = {
+        "description": "Standard exhibits this change needs that are listed as 'requested' in the definition.",
+        "type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": True}
     properties["contract_language"] = {
         "description": "Contract pricing terms found in the inputs, copied verbatim. Not applied in this version.",
         "type": "array",
@@ -62,7 +69,7 @@ def proposal_schema():
                   "properties": {"input": {"type": "string", "minLength": 1},
                                  "excerpt": {"type": "string", "minLength": 1}}},
     }
-    required = [name for name in properties if name != "repeat_client"]
+    required = [name for name in properties if name not in ("repeat_client", "request_record", "exhibits_needed")]
     return {"type": "object", "additionalProperties": False, "required": required, "properties": properties,
             "$defs": defs}
 
@@ -97,14 +104,32 @@ def schema_errors(proposal, schema):
     return errors
 
 
-def check_proposal(proposal, schema, texts, roles):
+def check_proposal(proposal, schema, texts, roles, definition=None):
     """Every reason the proposal can't be used. Empty means it passes.
 
     texts: input id -> the input's text. roles: {"labor": {role: unit}, "general_conditions": {role: unit}}.
+    definition: the PCO definition, for its clarification defaults and requestable exhibits.
     """
     errors = schema_errors(proposal, schema)
     if errors:
         return errors
+    definition = definition or {}
+    defaults = {p["id"] for p in definition.get("clarification_prompts") or [] if p.get("default")}
+    for index, item in enumerate(proposal["clarifications_and_exclusions"]):
+        where = f"clarifications_and_exclusions/{index} ({item['prompt']})"
+        if item.get("use_default"):
+            if item["prompt"] not in defaults:
+                errors.append(f"{where}: this prompt has no company default; write disposition and text instead.")
+            elif "text" in item or "disposition" in item:
+                errors.append(f"{where}: with use_default, leave disposition and text out; code inserts the approved text.")
+        elif "text" not in item or "disposition" not in item:
+            errors.append(f"{where}: give disposition and text, or use_default where the company has a default.")
+    requestable = {e["id"] for e in ((definition.get("presentation") or {}).get("exhibits") or {}).get("standard", [])
+                   if e.get("applies_when") == "requested"}
+    for name in proposal.get("exhibits_needed") or []:
+        if name not in requestable:
+            errors.append(f"exhibits_needed: {name!r} isn't one of the exhibits that can be requested "
+                          f"({', '.join(sorted(requestable)) or 'none'}).")
     for index, line in enumerate(proposal["cost_lines"]):
         where = f"cost_lines/{index} ({line['description']})"
         category, basis = line["category"], line["basis"]

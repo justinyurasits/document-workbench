@@ -1,4 +1,4 @@
-"""Evaluates a definition dependency's applies_when against the finished draft, for the manifest.
+"""Evaluates a definition's applies_when conditions against a draft (manifest, checklist, exhibits).
 
 The definition writes conditions in a small fixed vocabulary. Each evaluates to True, False, or None when the
 draft can't tell (an unknown fact, or a condition this evaluator doesn't recognize). None is recorded as
@@ -37,6 +37,11 @@ def evaluate(condition, draft, values):
         if days is None or not duration or threshold is None:
             return None
         return days / duration * 100 > threshold
+    if condition == "subcontractor_commitment":
+        return any(line["category"] == "subcontractors" for line in lines)
+    if match := re.fullmatch(r"cause_category is (.+)", condition):
+        cause = draft["header"].get("cause_category") or {}
+        return None if cause.get("status") != "known" else cause["value"] == match.group(1)
     if match := re.fullmatch(r"([A-Z][A-Z-]+) enabled", condition):
         return bool((values.get(match.group(1)) or {}).get("enabled"))
     if match := re.fullmatch(r"(\w+) unknown", condition):

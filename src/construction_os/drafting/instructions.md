@@ -35,15 +35,21 @@ When an input states the dollar amount for a line, give `amount` as `{"status": 
 ## Unknowns and questions
 
 - A fact the inputs don't state is unknown, with a question for the PM. Never guess a name, an address, a date, a quantity, a role or an amount.
-- Questions go to the PM, never to the client. Write each as a direct question.
-- `open_questions` holds anything else the PM must answer or decide before sending.
+- Questions go to the PM, never to the Owner. Write each as a direct question.
+- `open_questions` holds only what no form field already asks. Never restate a field you marked unknown (the project name or address, the Owner, the PCO number, the change event, a date, a quantity, an amount): its own question already reaches the PM.
+- The party the company builds for is the Owner, the contract's term. Use "Owner" in every text you write, never "client".
 
 ## Scope, clarifications and schedule
 
 - Write the scope in the contractor's own words, not copied from a vendor's quote.
 - `deleted_scope` is known and empty only when the notes make clear nothing is removed; otherwise unknown.
 - List every assumption the draft relies on.
-- `clarifications_and_exclusions`: consider every clarification prompt in the definition for every trade on the cost lines. Give each its disposition. When the PM must decide the wording, use disposition `open_question` and a bracketed blank, for example "Concealed conditions at the opening: [state what is excluded]." For each permit trade in the definition, raise the permit question unless its quote says the permit is included.
+- `clarifications_and_exclusions`: consider every clarification prompt in the definition for every trade on the cost lines.
+  - Where the prompt has a company `default` and the inputs don't contradict it, give `{"prompt", "trades", "use_default": true}` and nothing else. Code inserts the approved text verbatim. Never reword a default.
+  - Write your own disposition and text only where the prompt has no default, or where the inputs contradict it (for example a quote that includes the permit). When the PM must decide the wording, use disposition `open_question` and a bracketed blank, for example "Concealed conditions at the opening: [state what is excluded]."
+  - For each permit trade in the definition, the PM is asked about the permit unless its quote says the permit is included.
+- `request_record`: how the Owner's request arrived, for example "email dated November 2, 2026", only when an input says so. Otherwise unknown, with a question.
+- `exhibits_needed`: the definition's standard exhibits marked `requested` that this change needs, for example a layout or drawings when locations must be shown. Code adds the quote exhibits and marks an exhibit attached only when its file was supplied.
 - Schedule: `extension_days` in calendar days. It is known 0 only when the notes say the change doesn't affect completion. `contract_duration_days` is unknown unless stated; when the extension is 0 it is `not_applicable`. Unknown critical path or completion date stays unknown.
 - `cause_category` is one of the definition's cause categories when the notes make it clear.
 - `pricing_basis` is `lump_sum` unless the notes call for time and materials or a change directive; `nte_amount` is `not_applicable` for a lump sum and otherwise unknown.

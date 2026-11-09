@@ -7,7 +7,8 @@ implementation; a database can replace it behind the same interface without chan
 Layout under the root (PROJECTS_DIR, default ~/construction-os/projects):
 
     <project id>/project.yaml       the project ID and name
-    <project id>/inputs/            notes and quotes as supplied, never changed; inputs/index.json lists them
+    <project id>/inputs/            notes, quotes, correspondence and drawings as supplied, never changed;
+                                    inputs/index.json lists them
     <project id>/drafts/v001/ …     each draft version: draft.json, pco.docx, checklist.docx, manifest.json
 """
 import hashlib
@@ -26,7 +27,7 @@ import yaml
 
 DEFAULT_ROOT = Path.home() / "construction-os" / "projects"
 PROJECT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-INPUT_KINDS = ("notes", "quote")
+INPUT_KINDS = ("notes", "quote", "correspondence", "drawing")
 
 
 class ProjectError(Exception):
@@ -40,7 +41,7 @@ class ProjectIsolationError(ProjectError):
 @dataclass(frozen=True)
 class InputRecord:
     id: str             # notes-1, quote-1, quote-2 …: how the draft and its evidence refer to the input
-    kind: str           # notes | quote
+    kind: str           # notes | quote | correspondence | drawing
     file: str           # the stored file's name, inside inputs/
     original_name: str
     sha256: str

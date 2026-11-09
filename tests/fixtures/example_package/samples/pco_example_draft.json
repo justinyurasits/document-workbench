@@ -5,7 +5,7 @@
     "date": {"status": "known", "value": "2030-01-15"},
     "project": {"status": "known", "value": "Sample House"},
     "project_address": {"status": "unknown", "question": "What is the project address?"},
-    "owner": {"status": "unknown", "question": "Who is the client?"},
+    "owner": {"status": "unknown", "question": "Who is the owner?"},
     "contract_reference": {"status": "not_applicable", "reason": "No contract supplied."},
     "location": {"status": "known", "value": "Kitchen"},
     "trades": {"status": "known", "value": ["Carpentry", "Electrical"]},
@@ -50,7 +50,7 @@
     "contract_duration_days": {"status": "not_applicable", "reason": "No extension."},
     "critical_path": {"status": "known", "value": "no"},
     "completion_date": {"status": "known", "value": "No change"},
-    "authorization_by": {"status": "unknown", "question": "By what date must the client authorize this?"}
+    "authorization_by": {"status": "unknown", "question": "By what date must the owner authorize this?"}
   },
   "attachments": [{"letter": "A", "description": "Sample quote"}],
   "open_questions": ["A sample open question."]
