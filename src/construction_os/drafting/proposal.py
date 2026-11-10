@@ -19,6 +19,14 @@ from .inputs import normalized
 TOOL_NAME = "propose_pco_draft"
 CODE_HEADER_FIELDS = ("pco_number", "date", "project")     # set by code: PM assigns the number; today; project.yaml
 RATE_BASES = {"labor": "hours_x_rate", "general_conditions": "weeks_x_rate"}
+
+
+def priced_from_table(line, roles):
+    """Labor per unit of time for a listed role (a crew per DAY) takes the table rate, like hours × rate."""
+    unit = (line.get("unit") or {}).get("value", "")
+    table_unit = (roles.get("labor") or {}).get(line.get("role"))
+    return (line["category"] == "labor" and line["basis"] == "rate_x_duration" and table_unit is not None
+            and str(unit).strip().lower() in {table_unit, f"{table_unit}s", {"hour": "hr", "day": "day", "week": "wk"}[table_unit]})
 TOKEN = re.compile(r"(?<![\w.,])\d[\d,]*(?:\.\d+)?")
 GROUPED = re.compile(r"\d{1,3}(?:,\d{3})+|\d+")
 
@@ -151,6 +159,11 @@ def check_proposal(proposal, schema, texts, roles, definition=None):
                 errors.append(f"{where}: a line priced as {basis} takes its rate from the company table; remove amount.")
             continue
         amount = line.get("amount")
+        if priced_from_table(line, roles):
+            if amount is not None and amount["status"] == "cited":
+                errors.append(f"{where}: {line['role']} is priced per {roles['labor'][line['role']]} from the company "
+                              f"table; remove amount.")
+            continue
         if amount is None:
             errors.append(f"{where}: give amount, cited from an input, or unknown with a question.")
         elif amount["status"] == "cited":

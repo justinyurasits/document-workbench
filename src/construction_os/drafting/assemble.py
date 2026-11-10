@@ -50,7 +50,7 @@ def assemble_draft(proposal, project, inputs, package, today):
         "clarifications_and_exclusions": clarifications(proposal["clarifications_and_exclusions"], package.definition),
         "pricing_basis": proposal["pricing_basis"],
         "nte_amount": proposal["nte_amount"],
-        "cost_lines": [cost_line(line, by_id) for line in proposal["cost_lines"]],
+        "cost_lines": [cost_line(line, by_id, package) for line in proposal["cost_lines"]],
         "contract_terms": not_applicable("Contract pricing terms are not applied yet (build step 6)."),
         "markup_presentation": {"value": package.values["MARKUP-PRESENTATION"], "source": "company_setting",
                                 "reference": not_applicable("Company setting.")},
@@ -126,7 +126,18 @@ def file_documents(draft, proposal, inputs, package):
     draft["backup"] = backup
 
 
-def cost_line(line, inputs):
+def table_unit(line, package):
+    """The rate-table unit for a labor line priced per unit of time whose role and unit match the table."""
+    if line["category"] != "labor" or line["basis"] != "rate_x_duration" or "role" not in line:
+        return None
+    row = next((r for r in package.values.get("LABOR-BILLING-RATES") or [] if r.get("role") == line["role"]), None)
+    unit = str((line.get("unit") or {}).get("value", "")).strip().lower()
+    if row and unit in {row.get("unit"), f"{row.get('unit')}s", {"hour": "hr", "day": "day", "week": "wk"}.get(row.get("unit"))}:
+        return row.get("unit")
+    return None
+
+
+def cost_line(line, inputs, package):
     category, basis = line["category"], line["basis"]
     result = {key: line[key] for key in ("category", "trade", "division", "description", "quantity", "unit", "basis",
                                          "permit")}
@@ -135,7 +146,7 @@ def cost_line(line, inputs):
     if "selection" in line:
         result["selection"] = copy.deepcopy(line["selection"])
     result["attachment"] = not_applicable("Backup on file in the job folder, not attached.")
-    if RATE_BASES.get(category) == basis:
+    if RATE_BASES.get(category) == basis or table_unit(line, package) is not None:
         result["unit_price"] = not_applicable("From the company rate table.")
         result["evidence"] = {
             "source": "rate_table",

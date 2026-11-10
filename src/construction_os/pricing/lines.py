@@ -28,8 +28,8 @@ def amount_of(quantity, rate):
 def price_line(line, index, package, draft, extension_days=None):
     """One line, priced from the evidence the interface finds for it. Returns the line and its flags.
 
-    Labor priced as hours × rate and general conditions priced as weeks × rate take the company's table
-    rate. Every other line (quotes, estimates, lump sums, fees) is carried as given, with its evidence.
+    Labor priced as hours × rate, labor priced per unit of time (rate × duration, e.g. a crew per DAY) whose role
+    and unit match a table row, and general conditions priced as weeks × rate take the company's table rate. Every other line (quotes, estimates, lump sums, fees) is carried as given, with its evidence.
     For general conditions, extension_days sets the quantity: the extension in weeks, rounded to two decimals,
     and the amount is those rounded weeks × the weekly rate, so the printed line multiplies out exactly.
     """
@@ -45,6 +45,8 @@ def price_line(line, index, package, draft, extension_days=None):
     if line["category"] == "general_conditions":
         return general_conditions_line(line, index, table, own, quantity, given, extension_days, priced)
     if line["category"] == "labor" and line["basis"] == "hours_x_rate":
+        return from_table(table, own, quantity, given, index, name, "labor", priced)
+    if line["category"] == "labor" and line["basis"] == "rate_x_duration" and any(t.unit == own.unit for t in table):
         return from_table(table, own, quantity, given, index, name, "labor", priced)
     flags = []
     if line["category"] == "labor" and table and own.unit and given is not None:

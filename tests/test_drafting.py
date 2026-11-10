@@ -625,3 +625,29 @@ def test_an_assumption_with_an_unknown_group_is_rejected(store, package, tmp_pat
     wrong["scope"]["assumptions"] = [{"kind": "weather", "text": "Dry weather."}]
     _, client, _ = run(store, package, tmp_path, wrong, proposal())
     assert "scope/assumptions/0" in last_feedback(client)
+
+
+# Day-rate crews
+
+def with_crew(base, amount=None):
+    line = {"category": "labor", "role": "Crew", "trade": "carpentry", "division": known("06"),
+            "description": "Carpentry: frame the opening", "quantity": known(2), "unit": known("DAY"),
+            "basis": "rate_x_duration", "permit": "not_applicable"}
+    if amount:
+        line["amount"] = amount
+    base["cost_lines"].append(line)
+    return base
+
+
+def test_a_day_rate_crew_needs_no_amount_and_takes_the_table_rate(store, package, tmp_path):
+    result, _, _ = run(store, package, tmp_path, with_crew(proposal()))
+    line = json.loads(result.draft_path.read_text())["cost_lines"][2]
+    assert line["unit_price"]["status"] == "not_applicable" and line["evidence"]["source"] == "rate_table"
+    assert result.priced.lines[2].amount == D("3000.00")                     # 2 DAY × the fixture's 1,500 per day
+
+
+def test_a_cited_amount_on_a_day_rate_crew_is_rejected(store, package, tmp_path):
+    text = NOTES + " The crew costs $1,400 a day."
+    cited = with_crew(proposal(), {"status": "cited", "input": "notes-1", "excerpt": "$1,400 a day", "value": 1400})
+    _, client, _ = run(store, package, tmp_path, cited, with_crew(proposal()), text=text)
+    assert "Crew is priced per day from the company table; remove amount." in last_feedback(client)

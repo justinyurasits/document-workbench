@@ -29,6 +29,7 @@ Owner-selected items (fixtures, trims, switches and controls, finishes) are chos
 Each line has one category: labor, materials, subcontractors, equipment, general_conditions or permits_and_fees.
 
 - **Labor priced as hours times a rate:** basis `hours_x_rate`, unit `HR`, quantity the hours the notes give. Set `role` to a role copied exactly from the labor roles list. Give no `amount`; the rate comes from the company's table.
+- **A crew priced by the day (or week):** basis `rate_x_duration`, unit `DAY` (or `WK`), quantity the days the notes give, and `role` copied exactly from a labor role the list prices per day (or week). Give no `amount`; the rate comes from the company's table.
 - **Labor given as a dollar amount with no hours:** a lump sum. Basis `estimate`, quantity 1, unit `LS`, with a cited amount. Never invent hours.
 - **A role not in the list:** leave `role` out and add an open question asking which role prices the work. Never pick the nearest role.
 - **Subcontractor and supplier quotes:** basis `quote`, quantity 1, unit `LS` unless the quote prices by unit, with a cited amount. A quote the PM only mentions in the notes is cited from the notes.
