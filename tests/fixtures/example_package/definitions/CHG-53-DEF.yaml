@@ -69,6 +69,33 @@ presentation:                    # fictional wording, so tests prove the PCO rea
     not_approved_question: "Owner Selection {id} is {status}. Get it approved, or issue it with this PCO."
     confirm_notes: "Confirm the notes on Owner Selection {id} are reflected in this PCO."
   internal_note: Note for the PM
+  header_rows:
+    prepared_by: {label: Prepared by, role: Project Manager}
+    requested_by: {label: Requested by, value: Owner, applies_to: [Owner-Directed]}
+  work_includes: "This includes:"
+  basis_of_quantities: How we measured
+  pricing:
+    division_label: "Div {code} · {name}"
+    division_unassigned: Division not yet assigned
+    division_subtotal: "Div {code} total"
+    unassigned_subtotal: Unassigned total
+    pass_through_group: At cost, no markup
+    pass_through_subtotal: At cost total
+    subtotal: Subtotal
+    general_conditions: Site overhead
+    subtotal_before_markup: Before markup
+    detail_appendix: Line detail (PM only)
+  divisions: {"01": Site setup, "06": Woodwork, "09": Finishes, "26": Electrical}
+  schedule_added:
+    activity: Task
+    duration: Days
+    sentence: "Assumes approval by {date} so the trades stay in sequence."
+  assumption_headings:
+    scope: Scope notes
+    existing_conditions: Site conditions
+    access_logistics: Access
+    not_included: Excluded
+    clarifications: Standard terms
   signature_titles:
     executive_cosign: "{company}"
     client: Owner

@@ -10,7 +10,9 @@ Everything you write that reaches the PCO is read by the Owner, as part of the C
 - **Nothing internal reaches the Owner:** never name a crew, a subcontractor, the PM, a quote, a rate, or how something was estimated or priced in the description, scope, assumptions, clarifications or line descriptions. Those belong in `internal_notes`, which only the PM sees.
 - **Scope lines** say what the Owner gets, main work first, supporting work after: "Furnish and install six (6) recessed LED light fixtures in the living room ceiling, including wiring and switches."
 - **Cost line descriptions** lead with the trade, then the work: "Electrical: furnish and install six (6) recessed LED light fixtures, including wiring and switches". Code adds the basis in the Owner's terms.
-- **Assumptions** are only those the Owner should see: access, working hours, site conditions, what the price relies on. Estimating notes ("the carpentry is the PM's estimate of about six hours", "the electrician expects no schedule effect") go in `internal_notes`.
+- **Assumptions** are only those the Owner should see, each as `{"kind", "text"}` sorted into the definition's `assumption_headings`: `scope` (what the scope and price rely on), `existing_conditions` (the condition of what is there now) and `access_logistics` (access, working hours, occupancy, protection). Estimating notes ("the carpentry is the PM's estimate of about six hours", "the electrician expects no schedule effect") go in `internal_notes`.
+- **Not included** (`scope.not_included`): job-specific exclusions a careful PM would state for this work, for example electrical work, painting beyond the work area, doors, flooring, or work outside the named rooms. They are in addition to the standard clarifications, never instead of them; still consider every clarification prompt.
+- `trades` in the header are capitalized trade names ("Demolition", "Carpentry").
 
 ## Owner selections (PRO-34)
 

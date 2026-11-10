@@ -1,12 +1,13 @@
 """The renderer against a fictional company. Every number here comes from that company's fixture."""
 import json
+from decimal import Decimal
 import re
 
 import pytest
 from docx import Document
 
 from construction_os.rendering import CHECKLIST_TITLE, document_text, load_package, render, render_checklist, unfilled_fields
-from docx_helpers import parties, pricing_table, signature_blocks, summary_rows
+from docx_helpers import parties, pricing_table, signature_blocks, signature_table, summary_rows, summary_table
 
 
 @pytest.fixture
@@ -145,13 +146,13 @@ def test_markup_sentence_cites_a_supplied_contract(tmp_path, package, draft):
 # Signatures
 
 def test_signatures_by_party_before_client(tmp_path, package, draft):
-    assert parties(run(tmp_path, package, draft).path) == ["EXAMPLE BUILDERS", "OWNER", "PREPARED BY"]
+    assert parties(run(tmp_path, package, draft).path) == ["EXAMPLE BUILDERS", "OWNER"]   # Contractor on the left
 
 
 def test_signatures_follow_the_setting_when_after_client(tmp_path, package, draft):
     package.values["AUTH-WRITTEN.cosign_timing"] = "after_client"
     result = run(tmp_path, package, draft)
-    assert parties(result.path) == ["OWNER", "EXAMPLE BUILDERS", "PREPARED BY"]
+    assert parties(result.path) == ["OWNER", "EXAMPLE BUILDERS"]
     assert "signature_order" in result.kinds()
 
 
@@ -159,10 +160,26 @@ def test_company_block_has_the_executive_name_and_title(tmp_path, package, draft
     assert signature_blocks(run(tmp_path, package, draft).path)[0] == ("EXAMPLE BUILDERS", "Alex Sample", "President")
 
 
-def test_every_block_has_signature_name_title_and_date_lines(tmp_path, package, draft):
-    table = Document(run(tmp_path, package, draft).path).tables[-1]
-    labels = [row.cells[0].text for row in table.rows if row.cells[0]._tc is not row.cells[1]._tc]
-    assert labels == ["Signature", "Printed name", "Title", "Date"] * 3
+def test_the_contractor_and_owner_sign_side_by_side(tmp_path, package, draft):
+    table = signature_table(run(tmp_path, package, draft).path)
+    lines = [[row.cells[0].text, row.cells[3].text] for row in table.rows[1:]]
+    assert lines == [["Signature", "Signature"], ["Printed name", "Printed name"], ["Title", "Title"], ["Date", "Date"]]
+
+
+def test_the_preparer_is_in_the_header_not_a_signature_block(tmp_path, package, draft):
+    result = run(tmp_path, package, draft)
+    assert "PREPARED BY" not in parties(result.path)
+    assert grid(result.path)["Prepared by"] == "[Project manager name], Project Manager"
+    assert "Prepared by: Which project manager prepared this?" in result.needed
+    package.values["role.ProjectManager"]["name"] = "Pat Planner"
+    assert grid(run(tmp_path, package, draft).path)["Prepared by"] == "Pat Planner, Project Manager"
+
+
+def test_requested_by_owner_only_for_owner_directed_changes(tmp_path, package, draft):
+    assert grid(run(tmp_path, package, draft).path)["Requested by"] == "Owner"
+    draft["header"]["cause_category"] = {"status": "known", "value": "Field Condition"}
+    draft["description"] = {"status": "known", "value": "The Contractor proposes to repair a sample outlet."}
+    assert "Requested by" not in grid(run(tmp_path, package, draft).path)
 
 
 def test_no_architect_row_when_false(tmp_path, package, draft):
@@ -172,14 +189,14 @@ def test_no_architect_row_when_false(tmp_path, package, draft):
 def test_architect_row_when_true(tmp_path, package, draft):
     draft["architect_signs"] = {"value": True, "source": "contract_term", "reference": {"status": "known", "value": "Sample clause 3"}}
     result = run(tmp_path, package, draft)
-    assert parties(result.path) == ["EXAMPLE BUILDERS", "OWNER", "ARCHITECT", "PREPARED BY"]
+    assert parties(result.path) == ["EXAMPLE BUILDERS", "OWNER", "ARCHITECT"]   # the architect below
     assert any("architect" in item for item in result.needed)
 
 
 def test_architect_row_marked_when_unknown(tmp_path, package, draft):
     draft["architect_signs"] = {"status": "unknown", "question": "Does the architect sign this PCO?"}
     result = run(tmp_path, package, draft)
-    assert parties(result.path) == ["EXAMPLE BUILDERS", "OWNER", "ARCHITECT (IF REQUIRED BY CONTRACT)", "PREPARED BY"]
+    assert parties(result.path) == ["EXAMPLE BUILDERS", "OWNER", "ARCHITECT (IF REQUIRED BY CONTRACT)"]
     assert "Architect: Does the architect sign this PCO?" in result.needed
 
 
@@ -273,9 +290,14 @@ def test_every_prompt_for_every_trade_is_checked(tmp_path, package, draft):
     assert "Concealed conditions: not considered for electrical." in messages
 
 
-def test_deleted_scope_none(tmp_path, package, draft):
-    text = document_text(run(tmp_path, package, draft).path).split("\n")
-    assert text[text.index("Deleted") + 1] == "None"
+def test_deleted_scope_appears_only_when_there_is_some(tmp_path, package, draft):
+    assert "Deleted scope" not in document_text(run(tmp_path, package, draft).path)        # known and empty
+    draft["scope"]["deleted_scope"] = {"status": "unknown", "question": "Is anything removed?"}
+    result = run(tmp_path, package, draft)
+    assert "Deleted scope" not in document_text(result.path) and "Deleted scope: Is anything removed?" in result.needed
+    draft["scope"]["deleted_scope"] = {"status": "known", "value": ["The original outlet."]}
+    text = document_text(run(tmp_path, package, draft).path)
+    assert "Deleted scope" in text and "The original outlet." in text
 
 
 def test_permit_trade_raises_a_question(tmp_path, package, draft):
@@ -315,8 +337,9 @@ def test_schedule_with_added_days_keeps_every_row(tmp_path, package, draft):
     draft["schedule"]["contract_duration_days"] = {"status": "known", "value": 200}
     path = run(tmp_path, package, draft).path
     rows = [r.cells[0].text for r in table_with(path, "Calendar days").rows]
-    assert rows == ["Calendar days", "Critical path affected", "Completion date", "Condition"]
-    assert "No schedule impact" not in document_text(path)
+    assert rows == ["Calendar days", "Critical path affected", "Completion date"]
+    text = document_text(path)
+    assert "Assumes approval by [date] so the trades stay in sequence." in text and "No schedule impact" not in text
 
 
 def test_schedule_with_added_days(tmp_path, package, draft):
@@ -496,9 +519,10 @@ def test_no_internal_words_on_the_owners_pco(tmp_path, package, draft):
 
 
 def test_the_company_name_stays_out_of_the_letter(tmp_path, package, draft):
-    """Only the header, the notice box, the signature blocks and the footer name the company."""
+    """Only the cover, the header, the notice box, the signature blocks and the footer name the company."""
     document = Document(run(tmp_path, package, draft).path)
-    letter = [p.text for p in document.paragraphs if not p.text.startswith("NO WORK")]
+    paragraphs = [p.text for p in document.paragraphs]
+    letter = [t for t in paragraphs[paragraphs.index("1. DESCRIPTION OF POTENTIAL CHANGE"):] if not t.startswith("NO WORK")]
     letter += [c.text for r in pricing_table(document).rows for c in r.cells]
     assert not any("Example Builders" in text or "EXAMPLE BUILDERS" in text for text in letter)
     assert any("the Contractor" in text for text in letter)
@@ -562,3 +586,156 @@ def test_questions_the_checklist_already_asks_are_dropped(tmp_path, package, dra
     assert "☐  Is the outlet GFCI?" in items
     assert not any(q in i for i in items for q in ("supply the written quotes", "include the electrical permit",
                                                    "approved this under"))
+
+
+# PCO layout v2
+
+def texts(path):
+    return [p.text for p in Document(path).paragraphs]
+
+
+def test_first_page_is_branded_and_later_pages_carry_the_running_header(tmp_path, package, draft):
+    document = Document(run(tmp_path, package, draft).path)
+    section = document.sections[0]
+    assert section.different_first_page_header_footer
+    assert not section.first_page_header.paragraphs[0].text.strip()
+    assert section.header.paragraphs[0].text.endswith("PCO-007 | January 15, 2030")
+    cover = [p.text for p in document.paragraphs][:4]
+    assert cover[1:] == ["EXAMPLE BUILDERS", "POTENTIAL CHANGE ORDER", "PCO-007 · January 15, 2030"]
+    assert document.inline_shapes and package.tagline not in "\n".join(cover)
+
+
+def test_the_work_includes_follows_the_description_and_scope_is_stated_once(tmp_path, package, draft):
+    paragraphs = texts(run(tmp_path, package, draft).path)
+    start = paragraphs.index("1. DESCRIPTION OF POTENTIAL CHANGE")
+    assert paragraphs[start + 2] == "This includes:" and "Included" not in paragraphs and "Added scope" not in paragraphs
+
+
+def test_basis_of_quantities_only_when_present(tmp_path, package, draft):
+    assert "How we measured" not in texts(run(tmp_path, package, draft).path)
+    draft["basis_of_quantities"] = ["One (1) outlet box, standard depth."]
+    paragraphs = texts(run(tmp_path, package, draft).path)
+    assert paragraphs[paragraphs.index("How we measured") + 1].endswith("One (1) outlet box, standard depth.")
+
+
+def add_line(draft, **changes):
+    line = json.loads(json.dumps(draft["cost_lines"][1]))
+    line.update(changes)
+    draft["cost_lines"].append(line)
+    return line
+
+
+def money(value):
+    return f"${Decimal(value):,.2f}"
+
+
+def test_by_division_subtotals_add_up_to_the_subtotal(tmp_path, package, draft):
+    package.values["PRICING-PRESENTATION"] = "by_division"
+    add_line(draft, description="Second electrical", unit_price={"status": "known", "value": 333.33})
+    add_line(draft, description="Permit", category="permits_and_fees", basis="actual_fee", trade="permit",
+             division={"status": "known", "value": "01"}, unit_price={"status": "known", "value": 125.5})
+    add_line(draft, description="Unassigned item", division={"status": "unknown", "question": "Which division?"},
+             unit_price={"status": "known", "value": 10.01})
+    result = run(tmp_path, package, draft)
+    rows = summary_rows(result.path)
+    groups = {label: amount for label, amount in rows.items() if label.endswith("total") and label.startswith(("Div", "Unassigned"))}
+    assert set(groups) == {"Div 06 total", "Div 26 total", "Unassigned total"}
+    assert "Div 01 total" not in groups and "Division not yet assigned" in document_text(result.path)  # materials line, unknown div
+    work = sum(Decimal(v.strip("$").replace(",", "")) for v in groups.values())
+    assert money(work) == rows["Subtotal"] == money(result.priced.subtotal)
+    assert rows["At cost total"] == money(result.priced.pass_through) == "$125.50"
+    assert rows["Total"] == money(result.priced.total)
+
+
+def test_by_division_shows_general_conditions_and_the_subtotal_before_markup(tmp_path, package, draft):
+    package.values["PRICING-PRESENTATION"] = "by_division"
+    draft["schedule"]["extension_days"] = {"status": "known", "value": 14}
+    draft["schedule"]["contract_duration_days"] = {"status": "known", "value": 100}
+    add_line(draft, category="general_conditions", basis="weeks_x_rate", role="Project Manager", trade="general",
+             description="Project management", unit_price={"status": "not_applicable", "reason": "Rate table."},
+             quantity={"status": "not_applicable", "reason": "From the extension."},
+             evidence={"source": "rate_table", "reference": {"status": "known", "value": "Company rate"},
+                       "date": {"status": "not_applicable", "reason": "Current."}})
+    result = run(tmp_path, package, draft)
+    rows = summary_rows(result.path)
+    gc = sum(l.amount for l in result.priced.lines if l.category == "general_conditions")
+    assert rows["Site overhead"] == money(gc) == "$4,200.00"
+    assert rows["Before markup"] == money(result.priced.subtotal)
+    assert Decimal(rows["Subtotal"].strip("$").replace(",", "")) + gc == result.priced.subtotal
+
+
+def test_flat_is_one_table(tmp_path, package, draft):
+    package.values["PRICING-PRESENTATION"] = "flat"
+    path = run(tmp_path, package, draft).path
+    assert summary_table(path) is None and "Div 26 · Electrical" not in document_text(path)
+    assert summary_rows(path)["Total"] == "$2,645.00"
+
+
+def test_summary_only_puts_the_lines_in_the_checklist(tmp_path, package, draft):
+    package.values["PRICING-PRESENTATION"] = "summary_only"
+    result = run(tmp_path, package, draft)
+    text = document_text(result.path)
+    assert "$1,000.00" not in text and summary_rows(result.path)["Total"] == "$2,645.00"
+    with pytest.raises(AssertionError):
+        pricing_table(result.path)
+    checklist = document_text(render_checklist(result, draft, package, tmp_path / "check.docx"))
+    assert "Line detail (PM only)" in checklist and "26 · Trade partner · Sample electrical: 1 LS × $1,000.00 = $1,000.00" in checklist
+
+
+def test_an_unknown_amount_is_never_shown_as_zero(tmp_path, package, draft):
+    package.values["PRICING-PRESENTATION"] = "by_division"
+    draft["cost_lines"][1]["unit_price"] = {"status": "unknown", "question": "What is the quote?"}
+    rows = summary_rows(run(tmp_path, package, draft).path)
+    assert "$0.00" not in rows.values()
+    assert rows["Div 26 total"] == rows["Subtotal"] == "[amount]" and rows["Total"] == "[total]"
+    assert rows["Div 06 total"] == "$800.00"                    # a group whose lines are all known still adds up
+
+
+@pytest.mark.parametrize("layout", ["by_division", "flat", "summary_only"])
+def test_no_total_is_ever_rounded(tmp_path, package, draft, layout):
+    package.values["PRICING-PRESENTATION"] = layout
+    draft["cost_lines"][1]["unit_price"]["value"] = 46017.69            # brings the total to $54,415.34
+    result = run(tmp_path, package, draft)
+    assert result.priced.total == Decimal("54415.34")
+    text = document_text(result.path)
+    assert summary_rows(result.path)["Total"] == "$54,415.34"
+    assert "fifty-four thousand four hundred fifteen dollars and 34/100 ($54,415.34)" in text
+    assert not re.search(r"\$54,(4|5)00\.00", text) and "rounded" not in text.lower()
+
+
+def test_activities_only_when_days_are_added(tmp_path, package, draft):
+    draft["schedule"]["activities"] = [{"activity": "Rough-in", "duration_days": 1.5}, {"activity": "Trim", "duration_days": 1}]
+    assert "Rough-in" not in document_text(run(tmp_path, package, draft).path)          # zero days: unchanged
+    draft["schedule"]["extension_days"] = {"status": "known", "value": 3}
+    draft["schedule"]["contract_duration_days"] = {"status": "known", "value": 200}
+    table = table_with(run(tmp_path, package, draft).path, "Task")
+    assert [[c.text for c in r.cells] for r in table.rows] == [["Task", "Days"], ["Rough-in", "1.5 days"], ["Trim", "1 day"]]
+
+
+def test_section_4_groups_appear_only_with_items(tmp_path, package, draft):
+    draft["scope"]["assumptions"] = [{"kind": "access_logistics", "text": "Access during normal hours."},
+                                     "Plain strings are scope notes."]
+    draft["scope"]["not_included"] = ["Painting beyond the work area."]
+    paragraphs = texts(run(tmp_path, package, draft).path)
+    start = paragraphs.index("4. ASSUMPTIONS AND CLARIFICATIONS")
+    titles = [t for t in paragraphs[start:] if t in ("Scope notes", "Site conditions", "Access", "Excluded", "Standard terms")]
+    assert titles == ["Scope notes", "Access", "Excluded", "Standard terms"]           # no site conditions given
+    assert any(t.endswith("Painting beyond the work area.") for t in paragraphs)
+
+
+def test_exclusions_never_replace_the_standard_clarifications(tmp_path, package, draft):
+    draft["scope"]["not_included"] = ["Painting beyond the work area."]
+    text = document_text(run(tmp_path, package, draft).path)
+    for item in draft["clarifications_and_exclusions"]:
+        if item["disposition"] != "not_applicable":
+            assert item["text"] in text
+
+
+def test_section_order_with_and_without_attachments(tmp_path, package, draft):
+    order = ["1. DESCRIPTION OF POTENTIAL CHANGE", "2. PRICING", "3. SCHEDULE IMPACT", "4. ASSUMPTIONS AND CLARIFICATIONS",
+             "AUTHORIZATION AND SIGNATURES"]
+    paragraphs = texts(run(tmp_path, package, draft).path)
+    assert [t for t in paragraphs if t in order + ["5. ATTACHMENTS"]] == order
+    draft["attachments"] = [{"letter": "A", "description": "Layout (plan.pdf)", "supplied": True, "kind": "drawing"}]
+    paragraphs = texts(run(tmp_path, package, draft).path)
+    assert [t for t in paragraphs if t in order + ["5. ATTACHMENTS"]] == order[:4] + ["5. ATTACHMENTS", order[4]]

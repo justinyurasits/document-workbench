@@ -101,16 +101,58 @@
           "$ref": "#/$defs/text_list"
         },
         "assumptions": {
+          "description": "Owner-facing assumptions. A plain string is a scope assumption; an object names its group.",
           "type": "array",
           "items": {
-            "type": "string",
-            "minLength": 1
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "text"
+                ],
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "scope",
+                      "existing_conditions",
+                      "access_logistics"
+                    ]
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            ]
           }
         },
         "deleted_scope": {
           "$ref": "#/$defs/text_list",
           "description": "Known and empty means None."
+        },
+        "not_included": {
+          "description": "Job-specific exclusions, in addition to the standard clarifications (never instead of them).",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
+      }
+    },
+    "basis_of_quantities": {
+      "description": "How the quantities were taken (dimensions, area, waste factor). Filled by the estimating step; rendered only when present.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
       }
     },
     "pricing_basis": {
@@ -177,6 +219,28 @@
         },
         "authorization_by": {
           "$ref": "#/$defs/date"
+        },
+        "activities": {
+          "description": "Activity breakdown for added days. Filled by the estimating step; rendered only when days are added.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "activity",
+              "duration_days"
+            ],
+            "properties": {
+              "activity": {
+                "type": "string",
+                "minLength": 1
+              },
+              "duration_days": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            }
+          }
         }
       }
     },

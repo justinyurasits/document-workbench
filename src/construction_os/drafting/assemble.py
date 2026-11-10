@@ -177,6 +177,8 @@ def descriptive_text(draft):
     for item in draft["scope"]["inclusions"].get("value") or []:
         yield "An inclusion", item
     for item in draft["scope"]["assumptions"]:
-        yield "An assumption", item
+        yield "An assumption", item if isinstance(item, str) else item["text"]
+    for item in draft["scope"].get("not_included") or []:
+        yield "A not-included item", item
     for item in draft["clarifications_and_exclusions"]:
         yield "A clarification", item["text"]

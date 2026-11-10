@@ -16,7 +16,7 @@ from docx.oxml.ns import qn
 
 from construction_os.rendering import CHECKLIST_TITLE, document_text, load_package, render, render_checklist, unfilled_fields
 from construction_os.validate import sample_paths
-from docx_helpers import pricing_table, signature_table, summary_rows
+from docx_helpers import pricing_table, signature_table, summary_rows, summary_table
 
 CORPUS = Path(os.environ.get("CORPUS", Path(__file__).resolve().parents[2] / "construction-os-corpus"))
 pytestmark = pytest.mark.skipif(not (CORPUS / "templates/pco.docx").exists() or not (CORPUS / "samples").is_dir(),
@@ -114,41 +114,53 @@ def table_starting(document, label):
     return next(t for t in document.tables if t.rows[0].cells[0].text == label)
 
 
-def test_template_repeats_the_pricing_header_and_keeps_only_the_last_line_with_the_summary(package):
-    table = table_starting(Document(package.template), "Div.")
-    rows = list(table.rows)
+def row_after(rows, tag):
+    index = next(i for i, row in enumerate(rows) if row.cells[0].text == tag)
+    return rows[index + 1]
+
+
+def test_template_repeats_the_pricing_header_and_keeps_only_the_last_line_with_what_follows(package):
+    rows = list(table_starting(Document(package.template), "Div.").rows)
     assert row_property(rows[0], "tblHeader") and keeps_with_next(rows[0])
-    after = {rows[i].cells[0].text: rows[i + 1] for i in range(len(rows) - 1) if rows[i].cells[0].text.startswith("{%tr for")}
-    assert not keeps_with_next(after["{%tr for line in lines[:-1] %}"])
-    assert keeps_with_next(after["{%tr for line in lines[-1:] %}"])
-    assert keeps_with_next(after["{%tr for row in summary %}"])
+    assert not keeps_with_next(row_after(rows, "{%tr elif row.kind == 'line' %}"))
+    assert keeps_with_next(row_after(rows, "{%tr elif row.kind == 'line_keep' %}"))
+    assert keeps_with_next(row_after(rows, "{%tr if row.kind == 'division' %}"))
+    assert keeps_with_next(row_after(rows, "{%tr elif row.kind in ('subtotal', 'summary') %}"))
 
 
-def test_pricing_table_breaks_between_lines_and_keeps_the_summary_with_the_last_line(tmp_path, package):
+def test_pricing_groups_break_between_lines_and_keep_each_subtotal_with_its_last_line(tmp_path, package):
+    assert package.values["PRICING-PRESENTATION"] == "by_division"
     draft = long_draft(SAMPLES[0])
-    result = render(draft, package, tmp_path / "long.docx")
-    rows = list(table_starting(Document(result.path), "Div.").rows)
-    count = len(draft["cost_lines"])
-    header, lines, summary = rows[0], rows[1:1 + count], rows[1 + count:]
+    path = render(draft, package, tmp_path / "long.docx").path
+    rows = list(table_starting(Document(path), "Div.").rows)
+    header = rows[0]
     assert row_property(header, "tblHeader") and row_property(header, "cantSplit") and keeps_with_next(header)
-    assert all(row_property(row, "cantSplit") for row in lines + summary)
-    assert all(p.paragraph_format.keep_together for row in lines + summary for p in row_paragraphs(row))
-    assert not any(keeps_with_next(row) for row in lines[:-1])
-    assert keeps_with_next(lines[-1]) and all(keeps_with_next(row) for row in summary)
-    assert summary[-1].cells[0].text == package.definition["presentation"]["total_labels"]["add"]
+    assert all(row_property(row, "cantSplit") for row in rows)
+    group = []
+    for row in rows[1:]:
+        if row.cells[0]._tc is row.cells[6]._tc:          # a division heading: kept with its first line
+            assert keeps_with_next(row) and not group
+        elif row.cells[0]._tc is row.cells[5]._tc:        # the group's subtotal: its last line keeps with it
+            assert keeps_with_next(group[-1]) and not any(keeps_with_next(line) for line in group[:-1])
+            group = []
+        else:
+            group.append(row)
+    total = summary_table(path).rows[-1]
+    assert total.cells[0].text == package.definition["presentation"]["total_labels"]["add"]
+    assert all(keeps_with_next(row) for row in summary_table(path).rows)
 
 
 def test_signature_block_never_splits(tmp_path, package):
-    """The authorization paragraph and every signature block stay together on one page."""
+    """The authorization paragraphs and the signatures stay together on one page."""
     path = render(long_draft(SAMPLES[0]), package, tmp_path / "long.docx").path
     paragraphs = Document(path).paragraphs
     start = next(i for i, p in enumerate(paragraphs) if p.text == "AUTHORIZATION AND SIGNATURES")
-    heading, authorization = paragraphs[start], paragraphs[start + 1]
-    assert authorization.text.startswith("By signing below, the Owner authorizes")
-    assert heading.paragraph_format.keep_with_next and authorization.paragraph_format.keep_with_next
-    assert authorization.paragraph_format.keep_together
+    block = paragraphs[start:start + 5]
+    assert block[1].text.startswith("By signing below, the Owner authorizes")
+    assert all(p.paragraph_format.keep_with_next for p in block)
+    assert all(p.paragraph_format.keep_together for p in block[1:])
     rows = list(signature_table(path).rows)
-    assert len(rows) == 3 * 5
+    assert len(rows) == 5                                   # titles, then signature, name, title, date
     assert all(row_property(row, "cantSplit") for row in rows)
     assert all(keeps_with_next(row) and all(p.paragraph_format.keep_together for p in row_paragraphs(row)) for row in rows)
 
@@ -161,12 +173,11 @@ def headings(document):
 
 def test_numbered_sections_in_order_under_the_title(tmp_path, package):
     document = Document(rendered(tmp_path, package, SAMPLES[0]).path)
-    assert headings(document) == ["POTENTIAL CHANGE ORDER", "1. DESCRIPTION OF POTENTIAL CHANGE", "2. SCOPE OF WORK",
-                                  "3. PRICING", "4. SCHEDULE IMPACT", "AUTHORIZATION AND SIGNATURES"]   # no exhibits supplied
+    assert headings(document) == [package.company("name").upper(), "POTENTIAL CHANGE ORDER", "1. DESCRIPTION OF POTENTIAL CHANGE", "2. PRICING",
+                                  "3. SCHEDULE IMPACT", "4. ASSUMPTIONS AND CLARIFICATIONS",
+                                  "AUTHORIZATION AND SIGNATURES"]   # no exhibits supplied
     texts = [p.text for p in document.paragraphs]
-    labels = [t for t in texts if t in ("Added scope", "Deleted scope", "Assumptions", "Clarifications and exclusions")]
-    assert labels == ["Added scope", "Deleted scope", "Assumptions", "Clarifications and exclusions"]
-    assert "TERMS" not in texts
+    assert "The work includes:" in texts and "Added scope" not in texts and "TERMS" not in texts
 
 
 def test_notice_box_sits_under_the_header_table(tmp_path, package):
@@ -188,21 +199,24 @@ def fill(cell):
     return shading.get(qn("w:fill")) if shading is not None else None
 
 
-def test_pricing_columns_are_short_and_amounts_never_wrap(tmp_path, package):
-    table = pricing_table(rendered(tmp_path, package, SAMPLES[0]).path)
+def test_pricing_columns_are_short_and_never_wrap_mid_word(tmp_path, package):
+    path = rendered(tmp_path, package, SAMPLES[0]).path
+    table = pricing_table(path)
     assert [c.text for c in table.rows[0].cells] == ["Div.", "Category", "Description", "Qty", "Unit", "Unit price",
                                                      "Amount"]
     for row in table.rows:
+        if row.cells[0]._tc is row.cells[6]._tc:             # a division heading
+            continue
         assert cell_has(row.cells[6], "noWrap"), [c.text for c in row.cells]
-        if row.cells[0]._tc is not row.cells[5]._tc:
+        if row.cells[0]._tc is not row.cells[5]._tc:          # a line: everything but Description holds its line
             assert all(cell_has(row.cells[i], "noWrap") for i in (0, 1, 3, 4, 5))
+    assert all(cell_has(row.cells[1], "noWrap") for row in summary_table(path).rows)
 
 
 def test_total_is_a_dark_bar_with_the_package_label(tmp_path, package):
-    rows = pricing_table(rendered(tmp_path, package, SAMPLES[0]).path).rows
-    total = rows[-1]
+    total = summary_table(rendered(tmp_path, package, SAMPLES[0]).path).rows[-1]
     assert total.cells[0].text == package.definition["presentation"]["total_labels"]["add"] == "Total potential change: add"
-    assert fill(total.cells[0]) == fill(total.cells[6]) == "2C2C2C"
+    assert fill(total.cells[0]) == fill(total.cells[1]) == "2C2C2C"
 
 
 def test_authorization_states_the_total_validity_pcco_and_billing(tmp_path, package):
@@ -277,13 +291,15 @@ def test_no_internal_words_or_exhibits_for_backup(tmp_path, package, path):
 
 
 @pytest.mark.parametrize("path", SAMPLES, ids=lambda p: p.stem)
-def test_the_company_name_only_in_header_notice_signatures_and_footer(tmp_path, package, path):
+def test_the_company_name_only_on_the_cover_header_notice_signatures_and_footer(tmp_path, package, path):
     document = Document(rendered(tmp_path, package, path).path)
     name = package.company("name")
-    letter = [p.text for p in document.paragraphs]
+    paragraphs = [p.text for p in document.paragraphs]
+    letter = paragraphs[paragraphs.index("1. DESCRIPTION OF POTENTIAL CHANGE"):]
     letter += [c.text for r in pricing_table(document).rows for c in r.cells]
     assert not any(name in text or name.upper() in text for text in letter)
     assert name.upper() in document.tables[1].rows[0].cells[0].text           # the notice box
+    assert paragraphs.count(name.upper()) == 1                                 # the cover
 
 
 @pytest.mark.skipif(not (Path(SOFFICE).exists() and shutil.which("pdftotext")), reason="LibreOffice or pdftotext not installed")
@@ -306,3 +322,23 @@ def test_the_longest_category_label_never_wraps(tmp_path, package):
                           capture_output=True, text=True).stdout
     assert longest == "General conditions" and longest in text and "Subcontract " in text
     assert not re.search(r"Subcontrac\s*$", text, re.M) and not re.search(r"General\s*$", text, re.M)
+
+
+@pytest.mark.skipif(not (Path(SOFFICE).exists() and shutil.which("pdftotext")), reason="LibreOffice or pdftotext not installed")
+def test_day_units_and_unknown_quantities_never_wrap(tmp_path, package):
+    """Laid out by LibreOffice: "DAY" and "[qty]" stay whole in their columns."""
+    from construction_os.rendering.__main__ import preview_env
+
+    draft = json.loads((CORPUS / "samples/pco_test1_draft.json").read_text())
+    crew = dict(draft["cost_lines"][3], role="Demo Crew", basis="rate_x_duration", description="Demolition: remove finishes",
+                unit={"status": "known", "value": "DAY"}, quantity={"status": "unknown", "question": "How many days?"},
+                unit_price={"status": "unknown", "question": "What day rate?"})
+    draft["cost_lines"].append(crew)
+    result = render(draft, package, tmp_path / "day.docx")
+    subprocess.run([SOFFICE, "--headless", "--convert-to", "pdf", "--outdir", str(tmp_path), str(result.path)],
+                   check=True, capture_output=True, env=preview_env())
+    text = subprocess.run(["pdftotext", "-layout", str(result.path.with_suffix(".pdf")), "-"],
+                          capture_output=True, text=True).stdout
+    row = next(line for line in text.splitlines() if "Demolition: remove" in line)
+    assert re.search(r"\[qty\]\s+DAY\s+\[unit price\]\s+\[amount\]", row), row
+    assert not re.search(r"(\[qt|\bDA)\s*$", text, re.M)

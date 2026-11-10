@@ -3,6 +3,7 @@ import re
 import zipfile
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 from docx import Document
@@ -55,6 +56,8 @@ class RenderResult:
     priced: object = None
     needed: list = field(default_factory=list)
     items: list = field(default_factory=list)
+    layout: str = "flat"
+    pricing_lines: list = field(default_factory=list)   # the line detail, for the checklist when it's summary_only
 
     def kinds(self):
         return {flag.kind for flag in self.flags}
@@ -168,26 +171,50 @@ def number_text(value):
     return f"{value.to_integral_value():f}" if value == value.to_integral_value() else f"{value:f}"
 
 
-def pricing_rows(draft, priced, mode, presentation):
-    lines = []
-    shown_lines = [(draft["cost_lines"][p.index], p) for p in priced.lines if p.included]
-    for index, (line, result) in enumerate(shown_lines):
-        amount, unit_price = result.amount, result.unit_price
-        hide = mode == "hidden" and line["category"] not in priced.pass_through_categories
-        division = line["division"]
-        lines.append({
-            "division": division["value"] if division.get("status") == "known" else ("[div]" if division.get("status") == "unknown" else ""),
-            "category": category_label(line["category"], presentation),
-            "description": line["description"] + basis_phrase(line, result.quantity, presentation),
-            "quantity": shown_quantity(line, result.quantity),
-            "unit": shown(line["unit"], "[unit]"),
-            "unit_price": "Included" if hide else (money(unit_price) if unit_price is not None else "[unit price]"),
-            "amount": "Included" if hide else (money(amount) if amount is not None else "[amount]"),
-            "fill": LINEN if index % 2 else WHITE,
-        })
+LAYOUTS = ("by_division", "flat", "summary_only")
+
+
+def line_row(line, result, mode, priced, presentation, index):
+    hide = mode == "hidden" and line["category"] not in priced.pass_through_categories
+    division = line["division"]
+    return {
+        "kind": "line",
+        "code": division["value"] if division.get("status") == "known" else None,
+        "division": division["value"] if division.get("status") == "known" else ("[div]" if division.get("status") == "unknown" else ""),
+        "category": category_label(line["category"], presentation),
+        "description": line["description"] + basis_phrase(line, result.quantity, presentation),
+        "quantity": shown_quantity(line, result.quantity),
+        "unit": shown(line["unit"], "[unit]"),
+        "unit_price": "Included" if hide else (money(result.unit_price) if result.unit_price is not None else "[unit price]"),
+        "amount": "Included" if hide else (money(result.amount) if result.amount is not None else "[amount]"),
+        "value": result.amount,
+        "fill": LINEN if index % 2 else WHITE,
+    }
+
+
+def total_of(rows):
+    """The sum of the rows' amounts, or None when any is unknown: a partial sum is never shown as a total."""
+    values = [row["value"] for row in rows]
+    return None if any(v is None for v in values) else sum(values, Decimal("0.00"))
+
+
+def shown_amount(value, blank="[amount]"):
+    return blank if value is None else signed_money(value)
+
+
+def summary_rows(priced, mode, wording, work=None, general=None):
+    """Subtotal, general conditions when they apply, each markup component, pass-through, discount. Amounts are
+    the engine's, to the cent: never rounded. While any line is unknown, they show as bracketed blanks."""
+    known = priced.complete
     rows = []
     if mode != "hidden":
-        rows.append(("Subtotal", priced.subtotal))
+        if work is not None:
+            rows.append((wording.get("subtotal", "Subtotal"), work))
+            if general is not None:
+                rows.append((wording.get("general_conditions", "General conditions"), general))
+                rows.append((wording.get("subtotal_before_markup", "Subtotal before markup"), priced.subtotal))
+        else:
+            rows.append((wording.get("subtotal", "Subtotal"), priced.subtotal))
     if mode == "itemized":
         rows += [(f"{c.name} ({c.rate:g}%)", c.amount) for c in priced.components if c.client_visible]
         rest = sum(c.amount for c in priced.components if not c.client_visible)
@@ -199,8 +226,67 @@ def pricing_rows(draft, priced, mode, presentation):
         rows.append((f"{priced.discount.name} ({priced.discount.rate:g}%)", -priced.discount.amount))
     if priced.pass_through and mode != "hidden":
         rows.append(("Permits and fees, passed through without markup", priced.pass_through))
-    summary = [{"label": label, "amount": signed_money(amount), "fill": WHITE} for label, amount in rows]
-    return lines, summary
+    return [{"kind": "summary", "label": label, "amount": shown_amount(amount if known else None), "fill": WHITE}
+            for label, amount in rows]
+
+
+def keep_last(rows):
+    if rows:
+        rows[-1]["kind"] = "line_keep"
+    return rows
+
+
+def pricing_layout(draft, priced, mode, layout, presentation, total_row):
+    """The Owner's pricing per PRICING-PRESENTATION. Returns {"detail": rows, "summary": rows, "lines": rows}.
+
+    by_division: lines grouped by division, each group with its subtotal; general conditions and pass-through
+    fees are summary rows. The division subtotals add up to the summary's subtotal. flat: one table of lines,
+    summary and total. summary_only: the summary table; the lines go to the PM's checklist.
+    """
+    wording = presentation.get("pricing") or {}
+    shown_lines = [(draft["cost_lines"][p.index], p) for p in priced.lines if p.included]
+    lines = [line_row(line, result, mode, priced, presentation, index)
+             for index, (line, result) in enumerate(shown_lines)]
+    if layout == "flat" or layout not in LAYOUTS:
+        detail = keep_last([dict(row) for row in lines]) + summary_rows(priced, mode, wording) + [total_row]
+        return {"detail": detail, "summary": [], "lines": lines}
+    passed_at = {i for i, (line, _) in enumerate(shown_lines) if line["category"] in priced.pass_through_categories}
+    general_at = {i for i, (line, _) in enumerate(shown_lines)
+                  if line["category"] == "general_conditions" and i not in passed_at}
+    pass_through = [row for i, row in enumerate(lines) if i in passed_at]
+    general = [row for i, row in enumerate(lines) if i in general_at]
+    work = [row for i, row in enumerate(lines) if i not in passed_at and i not in general_at]
+    names = presentation.get("divisions") or {}
+    groups = {}
+    for row in work:
+        groups.setdefault(row["code"], []).append(row)
+    detail = []
+    for code in sorted(groups, key=lambda c: (c is None, c or "")):
+        rows = [dict(row) for row in groups[code]]
+        if code is None:
+            label = wording.get("division_unassigned", "Division to be assigned")
+            subtotal = wording.get("unassigned_subtotal", "Subtotal, division to be assigned")
+        else:
+            label = wording.get("division_label", "Division {code}: {name}").format(code=code, name=names.get(code, ""))
+            label = label.rstrip(": ")
+            subtotal = wording.get("division_subtotal", "Division {code} subtotal").format(code=code)
+        detail.append({"kind": "division", "label": label})
+        detail += keep_last(rows)
+        if mode != "hidden":
+            detail.append({"kind": "subtotal", "label": subtotal, "amount": shown_amount(total_of(rows))})
+    if pass_through:
+        detail.append({"kind": "division", "label": wording.get("pass_through_group", "Passed through without markup")})
+        rows = [dict(row) for row in pass_through]
+        detail += keep_last(rows)
+        detail.append({"kind": "subtotal", "label": wording.get("pass_through_subtotal", "Passed through, subtotal"),
+                       "amount": shown_amount(total_of(rows))})
+    general_total = total_of(general) if general else None
+    work_total = total_of(work)
+    summary = summary_rows(priced, mode, wording, work=work_total if work_total is not None else Decimal("0"),
+                           general=general_total if general else None) + [total_row]
+    if layout == "summary_only":
+        return {"detail": [], "summary": summary, "lines": lines}
+    return {"detail": detail, "summary": summary, "lines": lines}
 
 
 def signed_money(amount):
@@ -228,8 +314,8 @@ def markup_basis(draft, priced, mode, presentation):
     if mode == "hidden":
         return ""
     wording = presentation.get("markup_basis") or {
-        "company": "Markup per standard pricing: {rates}, each calculated on the direct-cost subtotal.",
-        "contract": "Markup per {reference}: {rates}, each calculated on the direct-cost subtotal, not compounded.",
+        "company": "Markup per standard pricing: {rates}, each calculated on the subtotal before markup.",
+        "contract": "Markup per {reference}: {rates}, each calculated on the subtotal before markup, not compounded.",
         "pass_through": " Permits and fees are passed through without markup."}
     rates = join_names(f"{c.name} {c.rate:g}%" for c in priced.components)
     if priced.contract_reference:
@@ -241,8 +327,9 @@ def markup_basis(draft, priced, mode, presentation):
     return sentence
 
 
-def signature_blocks(draft, package, needs):
-    """One block per party, in the order the company's co-signature timing sets."""
+def signers(draft, package, needs):
+    """The Contractor and the Owner side by side, in the order the co-signature timing sets (the first party on the
+    left); the architect below while architect_signs is unknown or true. The preparer is named in the header table."""
     timing = package.values["AUTH-WRITTEN.cosign_timing"]
     order = list(SIGNATURE_ORDER[timing])
     if draft["signatures"]["order"] != order:
@@ -250,27 +337,33 @@ def signature_blocks(draft, package, needs):
     titles = labels(package.definition).get("signature_titles") or {}
     company = package.company("name")
     executive = package.values["role.Executive"]["name"]
-    pm = package.values["role.ProjectManager"]["name"]
     owner = draft["header"]["owner"]
+
+    def party(title, name="", role=""):
+        return {"title": title, "title_upper": title.upper(), "name": name, "role": role}
+
     parties = {
-        "executive_cosign": (titles.get("executive_cosign", "{company}").format(company=company), executive or "",
-                             package.company("signatory", "title") or ""),
-        "client": (titles.get("client", "Owner"), owner["value"] if owner.get("status") == "known" else "", ""),
-        "architect": (titles.get("architect_if_required", "Architect (if required by contract)"), "", ""),
-        "contractor_pm": (titles.get("contractor_pm", "Prepared by"), pm or "", ""),
+        "executive_cosign": party(titles.get("executive_cosign", "{company}").format(company=company), executive or "",
+                                  package.company("signatory", "title") or ""),
+        "client": party(titles.get("client", "Owner"), owner["value"] if owner.get("status") == "known" else ""),
     }
-    architect = draft["architect_signs"]
-    if architect.get("status") == "unknown":   # An extra block is easy to delete; a missing one is easy to miss.
-        order.insert(order.index("contractor_pm"), "architect")
-        needs.add("Architect", architect["question"], key="architect")
-    elif architect["value"]:
-        parties["architect"] = (titles.get("architect", "Architect"), "", "")
-        order.insert(order.index("contractor_pm"), "architect")
+    signing = [key for key in order if key in parties]
+    architect = None
+    status = draft["architect_signs"]
+    if status.get("status") == "unknown":   # An extra block is easy to delete; a missing one is easy to miss.
+        architect = party(titles.get("architect_if_required", "Architect (if required by contract)"))
+        needs.add("Architect", status["question"], key="architect")
+    elif status["value"]:
+        architect = party(titles.get("architect", "Architect"))
         needs.add("Architect", "Who signs for the architect?", key="architect")
+    return {"left": parties[signing[0]], "right": parties[signing[1]], "architect": architect, "order": signing}
+
+
+def preparer(package, needs):
+    pm = package.values["role.ProjectManager"]["name"]
     if not pm:
         needs.add("Prepared by", "Which project manager prepared this?", key="prepared_by")
-    return [{"key": key, "title": parties[key][0], "title_upper": parties[key][0].upper(), "name": parties[key][1],
-             "role": parties[key][2]} for key in order]
+    return pm or "[Project manager name]"
 
 
 def schedule_fields(draft, needs, presentation):
@@ -281,8 +374,9 @@ def schedule_fields(draft, needs, presentation):
     by = shown_date(authorization, "[date]")
     no_change = presentation.get("schedule_no_change")
     if extension.get("status") == "known" and extension["value"] == 0 and no_change:
-        return {"rows": [{"label": "Schedule impact", "value": no_change["impact"]}],
+        return {"rows": [{"label": "Schedule impact", "value": no_change["impact"]}], "activities": [],
                 "sentence": no_change["sentence"].format(date=by)}
+    added = presentation.get("schedule_added")
     needs.check("Critical path", schedule["critical_path"], key="schedule.critical_path")
     needs.check("Completion date", schedule["completion_date"], key="schedule.completion_date")
     if extension.get("status") != "known":
@@ -294,13 +388,22 @@ def schedule_fields(draft, needs, presentation):
     critical = schedule["critical_path"]
     condition = NOT_APPLICABLE if authorization.get("status") == "not_applicable" else \
         f"Schedule assumes signed authorization by {by}."
-    return {"rows": [
+    rows = [
         {"label": "Calendar days", "value": days},
         {"label": "Critical path affected",
          "value": critical["value"].capitalize() if critical.get("status") == "known" else "[yes/no]"},
         {"label": "Completion date", "value": shown(schedule["completion_date"], "[completion date]")},
-        {"label": "Condition", "value": condition},
-    ], "sentence": ""}
+    ]
+    if not added:
+        return {"rows": rows + [{"label": "Condition", "value": condition}], "sentence": "", "activities": []}
+    activities = []
+    if extension.get("status") == "known" and extension["value"] > 0:
+        for item in schedule.get("activities") or []:
+            days = number_text(Decimal(str(item["duration_days"])))
+            activities.append({"activity": item["activity"],
+                               "duration": f"{days} day{'' if days == '1' else 's'}"})
+    return {"rows": rows, "activities": activities, "activity_label": added.get("activity", "Activity"),
+            "duration_label": added.get("duration", "Duration"), "sentence": added["sentence"].format(date=by)}
 
 
 def description_paragraph(draft, presentation):
@@ -376,10 +479,34 @@ def selection_lines(draft, needs, presentation):
 
 
 def scope_items(draft, needs, presentation):
-    """Added scope, main work first; each Owner selection is referenced right after the first item."""
+    """The work includes: main work first, supporting work after, then the Owner selections that govern it."""
     items = known_items(draft["scope"]["inclusions"], needs, "Added scope", "None stated", "[Added scope]")
-    selections = selection_lines(draft, needs, presentation)
-    return items[:1] + selections + items[1:] if selections else items
+    return items + selection_lines(draft, needs, presentation)
+
+
+def deleted_items(draft, needs):
+    """Shown only when there is some; an unknown answer is a question for the PM, never a blank on the PCO."""
+    deleted = draft["scope"]["deleted_scope"]
+    needs.check("Deleted scope", deleted, key="scope.deleted_scope")
+    return list(deleted["value"]) if deleted.get("status") == "known" else []
+
+
+def assumption_groups(draft, needs, presentation):
+    """Section 4: Owner-facing assumptions by group, job-specific exclusions, then the standard clarifications.
+    Each group appears only when it has items."""
+    headings = presentation.get("assumption_headings") or {
+        "scope": "Assumptions", "existing_conditions": "Existing conditions", "access_logistics": "Access and logistics",
+        "not_included": "Not included", "clarifications": "Clarifications and exclusions"}
+    grouped = {"scope": [], "existing_conditions": [], "access_logistics": []}
+    for item in draft["scope"]["assumptions"]:
+        if isinstance(item, str):
+            grouped["scope"].append(item)
+        else:
+            grouped[item["kind"]].append(item["text"])
+    grouped["not_included"] = list(draft["scope"].get("not_included") or [])
+    clarifications = clarification_lines(draft, needs)
+    grouped["clarifications"] = [] if clarifications == ["None stated"] else clarifications
+    return [{"title": headings[key], "entries": grouped[key]} for key in headings if grouped.get(key)]
 
 
 def exhibits(draft, needs, presentation):
@@ -459,8 +586,9 @@ def identity_value(package, path):
     return data
 
 
-def header_rows(draft, package, needs, valid_through):
+def header_rows(draft, package, needs, valid_through, prepared_by):
     header = draft["header"]
+    extra = (labels(package.definition).get("header_rows") or {})
     for name, label, _blank in HEADER_FIELDS:
         needs.check(label, header[name], key=f"header.{name}")
 
@@ -473,6 +601,13 @@ def header_rows(draft, package, needs, valid_through):
              field("project_address"), field("change_event_ref"), field("owner"), field("contract_reference"),
              field("location"), field("trades"), ("Contractor", package.company("legal_name")),
              field("requested_approval_date"), field("cause_category")]
+    if "prepared_by" in extra:
+        row = extra["prepared_by"]
+        pairs.append((row["label"], f"{prepared_by}, {row['role']}" if row.get("role") else prepared_by))
+    requested = extra.get("requested_by")
+    cause = header["cause_category"]
+    if requested and cause.get("status") == "known" and cause["value"] in requested.get("applies_to", []):
+        pairs.append((requested["label"], requested["value"]))
     for item in package.definition.get("header_identity") or []:
         value = identity_value(package, item["path"])
         pairs.append((item["label"], value or f"[{item['label']}]"))
@@ -521,11 +656,13 @@ def render(draft, package, out):
     priced = price(draft, package)
     flags += [Flag(f.code, f.message) for f in priced.flags]
     mode = presentation(draft, values, flags)
-    lines, summary = pricing_rows(draft, priced, mode, wording)
     total_label, total_amount, total_words, total_figures = total_fields(priced, wording)
+    layout = values.get("PRICING-PRESENTATION", "flat")
+    total_row = {"kind": "total", "label": total_label, "amount": total_amount}
+    pricing = pricing_layout(draft, priced, mode, layout, wording, total_row)
     period, valid_through = validity(draft, values)
     template = DocxTemplate(package.template)
-    rows = header_rows(draft, package, needs, valid_through)
+    rows = header_rows(draft, package, needs, valid_through, preparer(package, needs))
     needs.check("Description", draft["description"], key="description")
     needs.check("Reason", draft["reason"], key="reason")
     context = {
@@ -541,20 +678,20 @@ def render(draft, package, out):
         "validity_period": period,
         "validity_date": valid_through,
         "description": description_paragraph(draft, wording),
-        "inclusions": scope_items(draft, needs, wording),
-        "deleted_scope": known_items(draft["scope"]["deleted_scope"], needs, "Deleted scope", "None", "[Deleted scope, or None]"),
-        "assumptions": draft["scope"]["assumptions"] or ["None stated"],
-        "clarifications": clarification_lines(draft, needs),
-        "lines": lines,
-        "summary": summary,
-        "total_label": total_label,
-        "total_amount": total_amount,
+        "logo_large": InlineImage(template, str(package.logo), height=Inches(0.85)),
+        "work_includes": wording.get("work_includes", "The work includes:"),
+        "work_items": scope_items(draft, needs, wording),
+        "basis_of_quantities": list(draft.get("basis_of_quantities") or []),
+        "basis_of_quantities_label": wording.get("basis_of_quantities", "Basis of quantities"),
+        "deleted_scope": deleted_items(draft, needs),
+        "assumption_groups": assumption_groups(draft, needs, wording),
+        "pricing": {"detail": pricing["detail"], "summary": pricing["summary"]},
         "total_words": total_words,
         "total_figures": total_figures,
         "markup_basis": markup_basis(draft, priced, mode, wording),
         "schedule": schedule_fields(draft, needs, wording),
         "exhibits": exhibits(draft, needs, wording),
-        "signature_blocks": signature_blocks(draft, package, needs),
+        "signers": signers(draft, package, needs),
     }
     backup_items(draft, needs, wording)
     internal_notes(draft, needs, wording)
@@ -583,7 +720,7 @@ def render(draft, package, out):
             flags.append(Flag("placeholder", f"The document contains a placeholder: {text.strip()}"))
     for tag in unfilled_fields(out):
         flags.append(Flag("unfilled_field", f"A template field wasn't filled: {tag}"))
-    return RenderResult(out, flags, priced, needs.texts, list(needs.items))
+    return RenderResult(out, flags, priced, needs.texts, list(needs.items), layout, pricing["lines"])
 
 
 FIELD_PHRASES = {   # A model question naming one of these restates a form field the checklist already asks about.
@@ -660,6 +797,13 @@ def render_checklist(result, draft, package, out):
         line(tier, size=11.5, bold=True)
         for item in items or [Item("", "None")]:
             line(f"☐  {item.text}" if item.key else item.text, bold=item.key in URGENT_FLAGS)
+    if result.layout == "summary_only" and result.pricing_lines:   # the Owner sees the summary only
+        title = ((package.definition.get("presentation") or {}).get("pricing") or {}).get(
+            "detail_appendix", "Pricing detail (internal)")
+        line(title, size=11.5, bold=True)
+        for row in result.pricing_lines:
+            line(f"{row['division']} · {row['category']} · {row['description']}: {row['quantity']} {row['unit']} × "
+                 f"{row['unit_price']} = {row['amount']}")
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     document.save(out)
