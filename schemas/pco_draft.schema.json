@@ -155,6 +155,66 @@
         "minLength": 1
       }
     },
+    "measurements": {
+      "description": "Measurements for takeoffs: from the notes (with a verbatim excerpt) or estimated (with a basis).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "label",
+          "count",
+          "length_ft",
+          "width_ft",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "length_ft": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "width_ft": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "height_ft": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "source": {
+            "enum": [
+              "notes",
+              "estimate"
+            ]
+          },
+          "input": {
+            "type": "string",
+            "minLength": 1
+          },
+          "excerpt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "basis": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
     "pricing_basis": {
       "enum": [
         "lump_sum",
@@ -724,7 +784,8 @@
             "supplied_quote",
             "pm_notes",
             "historical_record",
-            "estimate"
+            "estimate",
+            "cost_history"
           ]
         },
         "reference": {
@@ -787,8 +848,114 @@
             "estimate",
             "rate_x_duration",
             "weeks_x_rate",
-            "actual_fee"
+            "actual_fee",
+            "unit_cost"
           ]
+        },
+        "cost_item": {
+          "description": "A cost-history item the model picked by id; code prices it at COST-RANGE-POINT. Never on a labor line.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "component"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "component": {
+              "enum": [
+                "material",
+                "total"
+              ]
+            }
+          }
+        },
+        "takeoff": {
+          "description": "How code computes the quantity from measurements: the parts are summed, then the waste factor is added.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "parts"
+          ],
+          "properties": {
+            "parts": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "measurement",
+                  "kind"
+                ],
+                "properties": {
+                  "measurement": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "kind": {
+                    "enum": [
+                      "floor_area",
+                      "ceiling_area",
+                      "wall_area",
+                      "perimeter",
+                      "count"
+                    ]
+                  },
+                  "walls": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "enum": [
+                        "length",
+                        "width"
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "waste_class": {
+              "type": "string",
+              "minLength": 1
+            },
+            "formula": {
+              "type": "string"
+            },
+            "result": {
+              "type": "string"
+            }
+          }
+        },
+        "duration": {
+          "description": "An estimated duration with its basis: days for a crew or a general conditions role, hours for hourly labor.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "basis"
+          ],
+          "properties": {
+            "days": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "hours": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "basis": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "quantity_basis": {
+          "description": "When the quantity is an estimate the notes don't give: its basis.",
+          "type": "string",
+          "minLength": 1
         },
         "evidence": {
           "$ref": "#/$defs/evidence"

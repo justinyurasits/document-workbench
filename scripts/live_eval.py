@@ -6,11 +6,14 @@ Never run in CI and not a test (pytest only collects tests/). Run it yourself:
                                 [--cases 1,4] [--keep DIR]
 
 Each draft case's request.md is drafted through the same pipeline as the CLI, in a throwaway project store
-(or --keep DIR), and its priced totals and flags are compared with expected.yaml. Advice cases are skipped
-until step 7. Contract terms aren't applied until step 6, so a case whose expected pricing comes from a
+(or --keep DIR), and its priced totals and flags are compared with expected.yaml. A case with
+pricing_structure (estimating from cost history) is graded on structure, not a total: every required scope item
+has a line, every line has a source, the arithmetic is exact, estimates are on the PM checklist, and general
+conditions follow the threshold rule. Advice cases are skipped until step 7. Contract terms aren't applied until step 6, so a case whose expected pricing comes from a
 contract is graded against its company-standard total and must raise contract_terms_not_applied.
 """
 import argparse
+import json
 import sys
 import tempfile
 import time
@@ -23,8 +26,10 @@ import yaml
 from construction_os.drafting import DraftingError
 from construction_os.drafting.cli import draft_request, real_client
 from construction_os.drafting.config import Settings
+from construction_os.pricing.general_conditions import gc_applies
+from construction_os.pricing.money import cents
 from construction_os.projects import FileProjectStore
-from construction_os.rendering import load_package
+from construction_os.rendering import document_text, load_package
 
 
 def money(value):
@@ -63,6 +68,60 @@ def compare(expected, result):
              priced.complete and priced.total == Decimal(pricing["total"])),
             ("no contract flag", 0, kinds["contract_terms_not_applied"], kinds["contract_terms_not_applied"] == 0),
         ]
+    return checks, kinds
+
+
+def compare_structure(expected, result, package):
+    """(checks, notes) for a case graded on structure, not a total."""
+    want = expected["exact"]["pricing_structure"]
+    priced = result.priced
+    draft = json.loads(Path(result.draft_path).read_text())
+    rows = [(line, draft["cost_lines"][line.index]) for line in priced.lines]
+    kinds = Counter(f.kind for f in result.flags)
+    checks = [("complete", True, priced.complete, priced.complete)]
+
+    def division(row):
+        value = row.get("division")
+        return str(value.get("value") if isinstance(value, dict) else value or "").zfill(2)
+
+    for item in want["required_scope"]:
+        hits = [line.description for line, row in rows if line.included
+                and (not item.get("division") or division(row) == item["division"])
+                and (not item.get("category") or line.category == item["category"])
+                and any(word in line.description.lower() for word in item["any_of"])]
+        checks.append((f"scope: {item['item']}", "a line", "; ".join(hits) or "none", bool(hits)))
+
+    allowed = set(want["every_line_sourced"])
+    unsourced = [f"{line.description} ({line.evidence.source if line.evidence else 'none'})"
+                 for line, _ in rows if line.included and (not line.evidence or line.evidence.source not in allowed)]
+    checks.append(("every line sourced", ", ".join(sorted(allowed)), "; ".join(unsourced) or "all", not unsourced))
+
+    wrong = [f"{line.description}: {line.quantity} × {line.unit_price} ≠ {line.amount}" for line, _ in rows
+             if line.included and None not in (line.quantity, line.unit_price, line.amount)
+             and cents(line.quantity * line.unit_price) != line.amount]
+    markup = sum((c.amount for c in priced.components), Decimal(0))
+    discount = priced.discount.amount if priced.discount else Decimal(0)
+    sums = priced.total == priced.subtotal + markup - discount + priced.pass_through
+    checks.append(("arithmetic exact", "every line and the total multiply and add",
+                   "; ".join(wrong) or ("yes" if sums else "the total doesn't add up"), not wrong and sums))
+
+    if want.get("estimated_quantities_on_checklist"):
+        estimated = [m for m in draft.get("measurements") or [] if m.get("source") == "estimate"]
+        text = document_text(result.checklist_path)
+        missing = [m["label"] for m in estimated if m["label"] not in text]
+        if estimated and "Confirm field dimensions before sending." not in text:
+            missing.append("Confirm field dimensions before sending.")
+        checks.append(("estimates on the checklist", "every estimated measurement", "; ".join(missing) or "all",
+                       not missing))
+
+    applies, _, _ = gc_applies(draft["schedule"], package.values)
+    gc = [line for line, _ in rows if line.category == "general_conditions"]
+    included = [line for line in gc if line.included]
+    rule = not included if applies is not True else all(
+        line.evidence and line.evidence.source == "rate_table" for line in included)
+    checks.append(("general conditions rule", "included only past the threshold, role × duration at rate",
+                   f"threshold {'passed' if applies else 'not passed' if applies is False else 'undecided'}; "
+                   f"{len(included)} of {len(gc)} GC line(s) included", rule))
     return checks, kinds
 
 
@@ -109,7 +168,8 @@ def main(argv=None):
             print(f"   FAILED to draft after {time.monotonic() - started:.1f}s:\n   {error}\n")
             continue
         elapsed = time.monotonic() - started
-        checks, kinds = compare(expected, result)
+        structure = "pricing_structure" in expected["exact"]
+        checks, kinds = (compare_structure(expected, result, package) if structure else compare(expected, result))
         for name, want, got, passed in checks:
             print(f"   {'PASS' if passed else 'FAIL'}  {name}: expected {want}; got {got}")
         failures += sum(1 for *_, passed in checks if not passed)
@@ -119,7 +179,9 @@ def main(argv=None):
         print(f"   attempts {len(result.attempts)}, served by {', '.join(served)}, {elapsed:.1f}s; tokens in "
               f"{tokens['input_tokens']}, out {tokens['output_tokens']}, cache read "
               f"{tokens['cache_read_input_tokens']}, cache write {tokens['cache_creation_input_tokens']}")
-        print(f"   {result.docx_path}\n")
+        print(f"   {result.docx_path}")
+        print(f"   {result.checklist_path}" + ("  (total not graded: " + money(result.priced.total) + ")"
+                                             if structure else "") + "\n")
     print("All checks passed." if not failures else f"{failures} check(s) failed.")
     return 1 if failures else 0
 

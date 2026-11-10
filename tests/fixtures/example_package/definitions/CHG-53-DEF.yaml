@@ -24,6 +24,8 @@ depends_on:
   - {id: GC-WEEKLY-RATES, applies_when: schedule_extension_percent_of_duration > GC-EXTENSION-THRESHOLD}
   - {id: APPROVAL-SPEND, applies_when: subcontractor_commitment, audience: internal}
   - {id: PRO-34, applies_when: owner_selection_present}
+  - {id: COST-HISTORY, applies_when: cost_history_used}
+  - {id: WASTE-FACTORS, applies_when: takeoff_used}
 inputs:
   required: [project, change_description, reason, scope_inclusions]
   asked_if_missing: [schedule_extension_days, quotes, quantities, architect_signs]
@@ -103,4 +105,8 @@ presentation:                    # fictional wording, so tests prove the PCO rea
     architect: Architect
     contractor_pm: Prepared by
 checklist:
-  before_sending: [header.owner, header.project_address, header.pco_number, header.project, backup.quote, selection, selection.notes, permit, contract_terms_not_applied, placeholder, incomplete_pricing, unsupported_price, price_in_scope_text, rule.APPROVAL-SPEND]
+  before_sending: [header.owner, header.project_address, header.pco_number, header.project, backup.quote, selection, selection.notes, measurement.confirm, permit, contract_terms_not_applied, placeholder, incomplete_pricing, unsupported_price, price_in_scope_text, rule.APPROVAL-SPEND]
+estimating:
+  breakdown:
+    - "Example Builders lists demolition, protection, each material and its installation as separate lines."
+  sources: [rate_table, cost_history, supplied_quote, pm_amount, estimate]

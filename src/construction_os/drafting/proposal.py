@@ -42,6 +42,8 @@ def proposal_schema():
     for name in ("unit_price", "evidence", "attachment"):
         del line["properties"][name]
         line["required"].remove(name)
+    for name in ("formula", "result"):                      # code computes these from the takeoff
+        del line["properties"]["takeoff"]["properties"][name]
     clarification = defs["clarification"]
     clarification["required"] = ["prompt", "trades"]
     clarification["properties"]["use_default"] = {
@@ -61,7 +63,7 @@ def proposal_schema():
         header["required"].remove(name)
     props = draft["properties"]
     keep = ("description", "reason", "request_record", "scope", "clarifications_and_exclusions", "pricing_basis",
-            "schedule", "open_questions", "repeat_client")
+            "schedule", "open_questions", "repeat_client", "measurements")
     properties = {name: copy.deepcopy(props[name]) for name in keep}
     properties["header"] = header
     properties["nte_amount"] = {"oneOf": [{"$ref": "#/$defs/unknown"}, {"$ref": "#/$defs/not_applicable"}]}
@@ -79,7 +81,7 @@ def proposal_schema():
                                  "excerpt": {"type": "string", "minLength": 1}}},
     }
     required = [name for name in properties
-                if name not in ("repeat_client", "request_record", "exhibits_needed", "internal_notes")]
+                if name not in ("repeat_client", "request_record", "exhibits_needed", "internal_notes", "measurements")]
     return {"type": "object", "additionalProperties": False, "required": required, "properties": properties,
             "$defs": defs}
 
@@ -114,7 +116,7 @@ def schema_errors(proposal, schema):
     return errors
 
 
-def check_proposal(proposal, schema, texts, roles, definition=None):
+def check_proposal(proposal, schema, texts, roles, definition=None, package=None):
     """Every reason the proposal can't be used. Empty means it passes.
 
     texts: input id -> the input's text. roles: {"labor": {role: unit}, "general_conditions": {role: unit}}.
@@ -159,6 +161,11 @@ def check_proposal(proposal, schema, texts, roles, definition=None):
                 errors.append(f"{where}: a line priced as {basis} takes its rate from the company table; remove amount.")
             continue
         amount = line.get("amount")
+        if line.get("cost_item"):
+            if amount is not None and amount["status"] == "cited":
+                errors.append(f"{where}: a cost-history line takes its price from the company's cost history; "
+                              f"remove amount.")
+            continue
         if priced_from_table(line, roles):
             if amount is not None and amount["status"] == "cited":
                 errors.append(f"{where}: {line['role']} is priced per {roles['labor'][line['role']]} from the company "
@@ -170,6 +177,8 @@ def check_proposal(proposal, schema, texts, roles, definition=None):
             errors += citation_errors(where, amount, texts)
     for index, item in enumerate(proposal["contract_language"]):
         errors += citation_errors(f"contract_language/{index}", {**item, "value": None}, texts)
+    if package is not None:
+        errors += estimating_errors(proposal, texts, package)
     return errors
 
 
@@ -215,4 +224,73 @@ def selection_errors(where, selection, texts):
         errors.append(f"{where}: ID {ident['value']!r} isn't in the inputs. Leave it unknown with a question.")
     if when.get("status") == "known" and not any(form in corpus for form in date_forms(when["value"])):
         errors.append(f"{where}: date {when['value']} isn't in the inputs. Leave it unknown with a question.")
+    return errors
+
+
+COST_ITEM_CATEGORIES = {"materials", "subcontractors", "equipment", "permits_and_fees"}
+
+
+def estimating_errors(proposal, texts, package):
+    """Cost-history picks, measurements, takeoffs and durations: code must be able to price and compute every one."""
+    from construction_os.pricing import cost_history
+
+    from .takeoff import compute
+
+    errors = []
+    measurements = {}
+    for index, m in enumerate(proposal.get("measurements") or []):
+        where = f"measurements/{index} ({m['id']})"
+        if m["id"] in measurements:
+            errors.append(f"{where}: the id is used twice.")
+        measurements[m["id"]] = m
+        if m["source"] == "notes":
+            if "excerpt" not in m or "input" not in m:
+                errors.append(f"{where}: a measurement from the notes needs input and a verbatim excerpt.")
+            else:
+                errors += citation_errors(where, {"input": m["input"], "excerpt": m["excerpt"], "value": None}, texts)
+        elif not m.get("basis"):
+            errors.append(f"{where}: an estimated measurement needs its basis.")
+    extension = (proposal["schedule"].get("extension_days") or {})
+    extension_days = extension.get("value") if extension.get("status") == "known" else None
+    for index, line in enumerate(proposal["cost_lines"]):
+        where = f"cost_lines/{index} ({line['description']})"
+        chosen = line.get("cost_item")
+        if chosen:
+            item = cost_history.items(package).get(chosen["id"])
+            if item is None:
+                errors.append(f"{where}: cost item {chosen['id']!r} doesn't exist. Pick an id find_cost_items returned.")
+            elif item.excluded:
+                errors.append(f"{where}: cost item {item.id} is excluded ({item.excluded}).")
+            else:
+                if line["category"] not in COST_ITEM_CATEGORIES:
+                    errors.append(f"{where}: a {line['category']} line can't be priced from cost history; the company's "
+                                  f"own labor comes from the rate table.")
+                if chosen["component"] not in item.components():
+                    errors.append(f"{where}: cost item {item.id} has no {chosen['component']} price; it has "
+                                  f"{', '.join(item.components()) or 'none'}.")
+                if cost_history.unit_name((line.get("unit") or {}).get("value")) != item.unit:
+                    errors.append(f"{where}: the line is in {(line.get('unit') or {}).get('value')}, but cost item "
+                                  f"{item.id} is per {item.unit}.")
+                if line["basis"] != "unit_cost":
+                    errors.append(f"{where}: a cost-history line has basis unit_cost.")
+        if line.get("takeoff") or line.get("duration"):
+            if (line.get("quantity") or {}).get("status") == "known":
+                errors.append(f"{where}: the quantity comes from the takeoff or duration; make it not_applicable.")
+        if line.get("takeoff"):
+            try:
+                compute(line["takeoff"], measurements, package.values, (line.get("unit") or {}).get("value"))
+            except ValueError as error:
+                errors.append(f"{where}: takeoff: {error}.")
+        duration = line.get("duration")
+        if duration:
+            unit = cost_history.unit_name((line.get("unit") or {}).get("value"))
+            if line["category"] == "general_conditions":
+                if "days" not in duration:
+                    errors.append(f"{where}: a general conditions duration is in days.")
+                elif extension_days is not None and duration["days"] > extension_days:
+                    errors.append(f"{where}: {duration['days']} days is more than the {extension_days}-day extension.")
+            elif unit == "DAY" and "days" not in duration or unit == "HR" and "hours" not in duration:
+                errors.append(f"{where}: give the duration in {'days' if unit == 'DAY' else 'hours'} to match the unit.")
+            elif unit not in ("DAY", "HR"):
+                errors.append(f"{where}: a duration needs a DAY or HR unit.")
     return errors

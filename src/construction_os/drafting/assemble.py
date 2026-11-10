@@ -12,6 +12,7 @@ import re
 from construction_os.rendering.render import SIGNATURE_ORDER, Flag
 
 from .proposal import RATE_BASES
+from .takeoff import compute, measurement_lines
 
 DOLLARS = re.compile(r"\$\s?\d")
 
@@ -31,6 +32,7 @@ def not_applicable(reason):
 def assemble_draft(proposal, project, inputs, package, today):
     """inputs: the request's InputRecords, in order. Returns (draft, flags)."""
     proposal = copy.deepcopy(proposal)
+    measurements = {m["id"]: m for m in proposal.get("measurements") or []}
     by_id = {record.id: record for record in inputs}
     flags = []
     header = {
@@ -50,16 +52,19 @@ def assemble_draft(proposal, project, inputs, package, today):
         "clarifications_and_exclusions": clarifications(proposal["clarifications_and_exclusions"], package.definition),
         "pricing_basis": proposal["pricing_basis"],
         "nte_amount": proposal["nte_amount"],
-        "cost_lines": [cost_line(line, by_id, package) for line in proposal["cost_lines"]],
+        "cost_lines": [cost_line(line, by_id, package, measurements) for line in proposal["cost_lines"]],
         "contract_terms": not_applicable("Contract pricing terms are not applied yet (build step 6)."),
         "markup_presentation": {"value": package.values["MARKUP-PRESENTATION"], "source": "company_setting",
                                 "reference": not_applicable("Company setting.")},
         "architect_signs": architect(proposal["architect_signs"]),
         "signatures": {"order": list(SIGNATURE_ORDER[package.values["AUTH-WRITTEN.cosign_timing"]])},
-        "schedule": proposal["schedule"],
+        "schedule": schedule_with_activities(proposal),
         "attachments": [],
         "open_questions": proposal["open_questions"],
     }
+    if proposal.get("measurements"):
+        draft["measurements"] = copy.deepcopy(proposal["measurements"])
+        draft["basis_of_quantities"] = measurement_lines(proposal["measurements"])
     if proposal.get("internal_notes"):
         draft["internal_notes"] = proposal["internal_notes"]
     if "request_record" in proposal:
@@ -137,15 +142,37 @@ def table_unit(line, package):
     return None
 
 
-def cost_line(line, inputs, package):
+def schedule_with_activities(proposal):
+    """Crew durations (in days) become the schedule's activity breakdown, shown when days are added."""
+    schedule = copy.deepcopy(proposal["schedule"])
+    activities = [{"activity": line["description"], "duration_days": line["duration"]["days"]}
+                  for line in proposal["cost_lines"]
+                  if line["category"] != "general_conditions" and "days" in (line.get("duration") or {})]
+    if activities:
+        schedule["activities"] = activities
+    return schedule
+
+
+def cost_line(line, inputs, package, measurements=None):
     category, basis = line["category"], line["basis"]
     result = {key: line[key] for key in ("category", "trade", "division", "description", "quantity", "unit", "basis",
                                          "permit")}
-    if "role" in line:
-        result["role"] = line["role"]
-    if "selection" in line:
-        result["selection"] = copy.deepcopy(line["selection"])
+    for key in ("role", "selection", "cost_item", "duration", "quantity_basis"):
+        if key in line:
+            result[key] = copy.deepcopy(line[key])
     result["attachment"] = not_applicable("Backup on file in the job folder, not attached.")
+    if line.get("takeoff"):
+        quantity, formula = compute(line["takeoff"], measurements or {}, package.values, line["unit"].get("value"))
+        result["takeoff"] = {**copy.deepcopy(line["takeoff"]), "formula": formula, "result": f"{quantity}"}
+        result["quantity"] = known(float(quantity))
+    duration = line.get("duration") or {}
+    if category != "general_conditions" and ("days" in duration or "hours" in duration):
+        result["quantity"] = known(duration.get("days", duration.get("hours")))
+    if line.get("cost_item"):
+        result["unit_price"] = not_applicable("From the company cost history, at the company's range point.")
+        result["evidence"] = {"source": "cost_history", "reference": known(line["cost_item"]["id"]),
+                              "date": not_applicable("Historical unit cost.")}
+        return result
     if RATE_BASES.get(category) == basis or table_unit(line, package) is not None:
         result["unit_price"] = not_applicable("From the company rate table.")
         result["evidence"] = {

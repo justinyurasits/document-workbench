@@ -2,7 +2,8 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-from .evidence import find_evidence
+from . import cost_history
+from .evidence import Evidence, find_evidence
 from .flags import Flag
 from .money import cents, known_number
 
@@ -44,6 +45,8 @@ def price_line(line, index, package, draft, extension_days=None):
 
     if line["category"] == "general_conditions":
         return general_conditions_line(line, index, table, own, quantity, given, extension_days, priced)
+    if line.get("cost_item"):
+        return from_cost_history(line, index, package, quantity, priced)
     if line["category"] == "labor" and line["basis"] == "hours_x_rate":
         return from_table(table, own, quantity, given, index, name, "labor", priced)
     if line["category"] == "labor" and line["basis"] == "rate_x_duration" and any(t.unit == own.unit for t in table):
@@ -84,10 +87,40 @@ def carried_or_blank(own, quantity, given, index, name, priced, flags):
     return priced(quantity, None, own), flags
 
 
+def from_cost_history(line, index, package, quantity, priced):
+    """The model picked a cost-history item by id; code takes the price at the company's range point."""
+    name, chosen = line["description"], line["cost_item"]
+    item = cost_history.items(package).get(chosen["id"])
+    blank = Evidence("cost_history", chosen["id"], line["basis"])
+    if item is None or item.excluded:
+        why = "isn't in the company's cost history" if item is None else f"is excluded ({item.excluded})"
+        return priced(quantity, None, blank), [Flag("unsupported_price", f"{name}: cost item {chosen['id']} {why}.", index)]
+    if cost_history.unit_name(line["unit"].get("value")) != item.unit:
+        return priced(quantity, None, blank), [Flag(
+            "cost_unit_mismatch", f"{name}: the line is in {line['unit'].get('value')}, but cost item {item.id} is per "
+                                  f"{item.unit}. Not converted.", index)]
+    rate = cost_history.price(item, chosen["component"], package)
+    if rate is None:
+        return priced(quantity, None, blank), [Flag(
+            "unsupported_price", f"{name}: cost item {item.id} has no {chosen['component']} price.", index)]
+    evidence = Evidence("cost_history", f"{item.id}: {item.description}", line["basis"], None, rate, item.unit,
+                        cost_history.describe(item, chosen["component"], package))
+    return priced(quantity, rate, evidence), []
+
+
 def general_conditions_line(line, index, table, own, quantity, given, extension_days, priced):
+    """Weeks are the extension, or the role's own duration when the draft gives one (never more than the extension):
+    role × duration at rate, so the PM can change one number."""
     name = line["description"]
-    weeks = cents(extension_days / DAYS_PER_WEEK)
+    duration = (line.get("duration") or {}).get("days")
     flags = []
+    if duration is not None and Decimal(str(duration)) <= extension_days:
+        extension_days = Decimal(str(duration))
+    elif duration is not None:
+        flags.append(Flag("gc_duration_over_extension",
+                          f"{name}: {duration:g} days is more than the {extension_days:g}-day extension. Used the "
+                          f"extension.", index))
+    weeks = cents(extension_days / DAYS_PER_WEEK)
     if quantity is not None and cents(quantity) != weeks:
         flags.append(Flag("gc_quantity_differs",
                           f"{name}: the draft says {quantity:g} weeks; the extension is {extension_days:g} calendar "

@@ -93,6 +93,12 @@ class Needs:
         if (field_value or {}).get("status") == "unknown":
             self.add(label, field_value["question"], key=key)
 
+    def note(self, key, text, kind="estimate"):
+        """An item whose text stands as written (no "label: question")."""
+        self.flags.append(Flag(kind, text))
+        if all(item.text != text for item in self.items):
+            self.items.append(Item(key, text))
+
     @property
     def texts(self):
         return [item.text for item in self.items]
@@ -528,6 +534,49 @@ def exhibits(draft, needs, presentation):
     return shown_items
 
 
+def num(value):
+    text = f"{Decimal(str(value)).normalize():f}"
+    return text
+
+
+def estimating_items(draft, priced, needs):
+    """What the PM checks in an estimated draft: every estimated measurement, quantity and duration, and every
+    cost-history price with its item, range and data points. None of it reaches the Owner's PCO."""
+    estimated = [m for m in draft.get("measurements") or [] if m["source"] == "estimate"]
+    for m in estimated:
+        size = f"{num(m['length_ft'])} × {num(m['width_ft'])} ft" + (f", {num(m['height_ft'])} ft high" if m.get("height_ft") else "")
+        needs.note("estimate.measurement", f"Estimated measurement: {m['label']}, {size}. Basis: {m['basis']}")
+    if estimated:
+        needs.note("measurement.confirm", "Confirm field dimensions before sending.")
+    by_id = {m["id"]: m for m in draft.get("measurements") or []}
+    for line in draft["cost_lines"]:
+        name = line["description"]
+        takeoff = line.get("takeoff")
+        if takeoff and takeoff.get("formula"):
+            sources = {by_id[p["measurement"]]["source"] for p in takeoff["parts"] if p["measurement"] in by_id}
+            kind = "estimated measurements" if "estimate" in sources else "measurements from the notes"
+            needs.note("estimate.quantity", f"Quantity from takeoff ({kind}): {name}: {takeoff['formula']}.")
+        duration = line.get("duration") or {}
+        if duration:
+            amount = f"{num(duration['days'])} days" if "days" in duration else f"{num(duration['hours'])} hours"
+            needs.note("estimate.duration", f"Estimated duration: {name}: {amount}. Basis: {duration['basis']}")
+        if line.get("quantity_basis"):
+            quantity = shown(line["quantity"], "[qty]")
+            needs.note("estimate.quantity", f"Estimated quantity: {name}: {quantity} {shown(line['unit'], '')}. "
+                                            f"Basis: {line['quantity_basis']}")
+    for result in priced.lines:
+        evidence = result.evidence
+        if evidence is not None and evidence.source == "cost_history" and evidence.note:
+            needs.note("cost_history", f"{result.description}: {evidence.note}", kind="cost_history")
+    labor_trades = {line["trade"] for line in draft["cost_lines"] if line["category"] == "labor"}
+    for line in draft["cost_lines"]:
+        chosen = line.get("cost_item") or {}
+        if line["category"] == "subcontractors" and chosen.get("component") == "total" and line["trade"] in labor_trades:
+            needs.note("cost_history.double_count",
+                       f"Possible double count: \"{line['description']}\" is priced from cost history as installed "
+                       f"work, and company labor is also carried for {line['trade']}. Keep one.", kind="cost_history")
+
+
 def internal_notes(draft, needs, presentation):
     label = presentation.get("internal_note", "Note for the PM")
     for note in draft.get("internal_notes") or []:
@@ -695,6 +744,7 @@ def render(draft, package, out):
     }
     backup_items(draft, needs, wording)
     internal_notes(draft, needs, wording)
+    estimating_items(draft, priced, needs)
     for line in draft["cost_lines"]:
         for name in ("quantity", "unit", "unit_price", "division"):
             needs.check(f"{line['description']}, {name.replace('_', ' ')}", line[name], key=f"line.{name}")
@@ -735,7 +785,7 @@ FIELD_PHRASES = {   # A model question naming one of these restates a form field
     "selection": ("owner selection",),
 }
 ITEM_FLAGS = ("missing_input", "permit_question", "internal_rule", "pcco_number", "backup", "selection", "exhibit",
-              "internal_note")
+              "internal_note", "estimate", "cost_history")
 
 
 def normalized(text):
