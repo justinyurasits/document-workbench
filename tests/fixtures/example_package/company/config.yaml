@@ -15,3 +15,9 @@ values:
   GC-EXTENSION-THRESHOLD: 10
   TAX-TREATMENT: included_in_material_estimates
   REPEAT-CLIENT-DISCOUNT: {enabled: false, rate: null}
+  COST-HISTORY: {from: company/pricing/cost_history.yaml, key: cost_history}
+  COST-RANGE-POINT: mid
+  WASTE-FACTORS:
+    - {class: lumber_wood, percent: 10, high_percent: null, note: "wood"}
+    - {class: tile_stone, percent: 12, high_percent: 15, note: "patterns"}
+    - {class: paint, percent: 5, high_percent: 10, note: "touch-ups"}

@@ -14,7 +14,8 @@ from construction_os.validate import DEFINITION, load_registry
 
 from .config import INSTRUCTIONS
 
-PRICE_PARAMETERS = {"LABOR-BILLING-RATES", "GC-WEEKLY-RATES", "MARKUP-STRUCTURE", "REPEAT-CLIENT-DISCOUNT"}
+PRICE_PARAMETERS = {"LABOR-BILLING-RATES", "GC-WEEKLY-RATES", "MARKUP-STRUCTURE", "REPEAT-CLIENT-DISCOUNT",
+                    "COST-HISTORY", "COST-RANGE-POINT", "WASTE-FACTORS"}   # the model sees roles and classes, never prices
 ROLE_TABLES = {"labor": "LABOR-BILLING-RATES", "general_conditions": "GC-WEEKLY-RATES"}
 
 
@@ -106,6 +107,9 @@ def build_context(package):
     for category, entries in table.items():
         listed = "\n".join(f"- {role} (per {unit})" for role, unit in entries.items()) or "- (none)"
         lines.append(f"\n{category} roles:\n{listed}")
+    classes = [row["class"] for row in package.values.get("WASTE-FACTORS") or []]
+    if classes:
+        lines.append("\nWaste classes for takeoffs (the percentages are applied by code): " + ", ".join(classes))
     parts.append("\n".join(lines))
     return DraftingContext(INSTRUCTIONS.read_text(encoding="utf-8"), "\n\n".join(parts), table, definition,
                            digest(definition_text), sources)

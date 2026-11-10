@@ -45,9 +45,12 @@ class Result:
         return not self.errors
 
 
+SAFE_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)   # the C loader when available: the cost history is large
+
+
 def load_yaml(path):
     with open(path, encoding="utf-8") as handle:
-        return yaml.safe_load(handle)
+        return yaml.load(handle, Loader=SAFE_LOADER)
 
 
 def is_number(value):

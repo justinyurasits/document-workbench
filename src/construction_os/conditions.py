@@ -37,6 +37,10 @@ def evaluate(condition, draft, values):
         if days is None or not duration or threshold is None:
             return None
         return days / duration * 100 > threshold
+    if condition == "cost_history_used":
+        return any(line.get("cost_item") for line in lines)
+    if condition == "takeoff_used":
+        return any(line.get("takeoff") for line in lines)
     if condition == "owner_selection_present":
         return any(line.get("selection") for line in lines)
     if condition == "subcontractor_commitment":

@@ -33,8 +33,8 @@ def priced_cases():
     return [c for c in CASES if "pricing" in expected(c)["exact"]]
 
 
-def test_there_are_five_cases():
-    assert [expected(c)["id"] for c in CASES] == [1, 2, 3, 4, 5]
+def test_there_are_six_cases():
+    assert [expected(c)["id"] for c in CASES] == [1, 2, 3, 4, 5, 6]
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c.name)

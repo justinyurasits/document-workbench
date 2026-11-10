@@ -16,6 +16,7 @@ from construction_os.validate import DEFINITION
 
 from .assemble import assemble_draft
 from construction_os.conditions import evaluate
+from construction_os.pricing import cost_history
 from .config import prompt_version
 from .context import build_context
 from .inputs import input_text
@@ -53,7 +54,7 @@ def user_message(project, records, texts, today):
     return "\n\n".join(parts)
 
 
-def review(turn, schema, texts, roles, definition=None):
+def review(turn, schema, texts, roles, definition=None, package=None):
     """(proposal, tool_use_ids, errors) for one model turn."""
     if turn.stop_reason == "refusal":
         raise DraftingError("The model declined to draft this request.")
@@ -66,23 +67,62 @@ def review(turn, schema, texts, roles, definition=None):
     if len(uses) > 1:
         return None, ids, [f"{TOOL_NAME} was called {len(uses)} times. Call it exactly once."]
     proposal = uses[0]["input"]
-    return proposal, ids, check_proposal(proposal, schema, texts, roles, definition)
+    return proposal, ids, check_proposal(proposal, schema, texts, roles, definition, package)
 
 
-def propose(client, context, schema, texts, message):
+LOOKUP_TOOL = "find_cost_items"
+MAX_LOOKUPS = 20
+MAX_TURNS = 30
+
+
+def lookup_tool():
+    return {"name": LOOKUP_TOOL,
+            "description": "Find the company's cost-history items for a proposed line, by division, unit and words "
+                           "from the line's description. Returns candidates by id (no prices); pick one by id in "
+                           "cost_item. Use it for materials, subcontracted work, equipment and fees, never for the "
+                           "company's own labor.",
+            "input_schema": {"type": "object", "additionalProperties": False, "required": ["query"],
+                             "properties": {"division": {"type": "string", "pattern": "^\\d{2}$"},
+                                            "unit": {"type": "string"},
+                                            "query": {"type": "string", "minLength": 1}}}}
+
+
+def run_lookups(turn, package, lookups):
+    """Answer every find_cost_items call in a turn. Returns the tool_result blocks."""
+    results = []
+    for use in turn.tool_uses(LOOKUP_TOOL):
+        if len(lookups) >= MAX_LOOKUPS:
+            results.append({"type": "tool_result", "tool_use_id": use["id"], "is_error": True,
+                            "content": f"The lookup limit ({MAX_LOOKUPS}) is reached. Submit the proposal now; "
+                                       f"leave unpriced lines unknown with a question."})
+            continue
+        query = use["input"]
+        found = cost_history.candidates(package, query.get("division"), query.get("unit"), query.get("query", ""))
+        lookups.append({"query": query, "returned": [item.id for item in found]})
+        results.append({"type": "tool_result", "tool_use_id": use["id"],
+                        "content": json.dumps([cost_history.offer(item) for item in found])})
+    return results
+
+
+def propose(client, context, schema, texts, message, package=None):
+    """One conversation: cost-history lookups as needed, then the proposal, checked; one retry with the errors."""
     system = [{"type": "text", "text": context.instructions},
               {"type": "text", "text": context.package_text, "cache_control": {"type": "ephemeral"}}]
-    tools = [tool_definition(schema)]
+    tools = [tool_definition(schema)] + ([lookup_tool()] if package is not None else [])
     messages = [{"role": "user", "content": message}]
-    attempts = []
-    for number in range(1, ATTEMPTS + 1):
+    attempts, lookups = [], []
+    for _ in range(MAX_TURNS):
         turn = client.send(system, messages, tools)
-        proposal, ids, errors = review(turn, schema, texts, context.roles, context.definition)
-        attempts.append({"attempt": number, "model": turn.model, "stop_reason": turn.stop_reason,
+        if package is not None and turn.tool_uses(LOOKUP_TOOL) and not turn.tool_uses(TOOL_NAME):
+            messages.append({"role": "assistant", "content": turn.content})
+            messages.append({"role": "user", "content": run_lookups(turn, package, lookups)})
+            continue
+        proposal, ids, errors = review(turn, schema, texts, context.roles, context.definition, package)
+        attempts.append({"attempt": len(attempts) + 1, "model": turn.model, "stop_reason": turn.stop_reason,
                          "request_id": turn.request_id, "usage": turn.usage, "errors": errors})
         if not errors:
-            return proposal, attempts, turn
-        if number == ATTEMPTS:
+            return proposal, attempts, lookups
+        if len(attempts) == ATTEMPTS:
             details = "\n".join(f"  attempt {a['attempt']}:\n" + "\n".join(f"    - {e}" for e in a["errors"])
                                 for a in attempts)
             raise DraftingError(f"The model's proposal failed validation {ATTEMPTS} times; no draft was written.\n"
@@ -90,12 +130,11 @@ def propose(client, context, schema, texts, message):
         feedback = "The proposal was rejected. Fix every error and call the tool again:\n" + \
                    "\n".join(f"- {error}" for error in errors)
         messages.append({"role": "assistant", "content": turn.content})
-        if ids:
-            messages.append({"role": "user", "content": [
-                {"type": "tool_result", "tool_use_id": tool_id, "is_error": True, "content": feedback}
-                for tool_id in ids]})
-        else:
-            messages.append({"role": "user", "content": feedback})
+        results = [{"type": "tool_result", "tool_use_id": tool_id, "is_error": True, "content": feedback}
+                   for tool_id in ids]
+        results += run_lookups(turn, package, lookups) if package is not None else []
+        messages.append({"role": "user", "content": results or feedback})
+    raise DraftingError(f"The model didn't submit a proposal within {MAX_TURNS} turns; no draft was written.", attempts)
 
 
 def draft_pco(project, package, records, client, today=None):
@@ -106,7 +145,8 @@ def draft_pco(project, package, records, client, today=None):
     schema = proposal_schema()
     readable = [record for record in records if record.kind in TEXT_KINDS]
     texts = {record.id: input_text(project, record) for record in readable}
-    proposal, attempts, _ = propose(client, context, schema, texts, user_message(project, readable, texts, today))
+    proposal, attempts, lookups = propose(client, context, schema, texts,
+                                          user_message(project, readable, texts, today), package)
     draft, flags = assemble_draft(proposal, project, records, package, today)
     errors = schema_errors(draft, draft_schema())
     if errors:
@@ -120,14 +160,15 @@ def draft_pco(project, package, records, client, today=None):
     result.flags[:0] = flags
     checklist = render_checklist(result, draft, package, folder / "checklist.docx")
     manifest_path = folder / "manifest.json"
-    manifest = build_manifest(project, package, context, schema, records, draft, result, client, attempts,
+    manifest = build_manifest(project, package, context, schema, records, draft, result, client, attempts, lookups,
                               folder, time.monotonic() - started)
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False, default=str))
     return DraftResult(folder, draft_path, result.path, checklist, manifest_path, result.flags, result.priced,
                        attempts)
 
 
-def build_manifest(project, package, context, schema, records, draft, result, client, attempts, folder, elapsed):
+def build_manifest(project, package, context, schema, records, draft, result, client, attempts, lookups, folder,
+                   elapsed):
     priced = result.priced
     settings = getattr(client, "settings", None)
     sources = []
@@ -146,6 +187,7 @@ def build_manifest(project, package, context, schema, records, draft, result, cl
                   "effort": settings.effort if settings else None,
                   "prompt_version": prompt_version(json.dumps(schema, sort_keys=True))},
         "attempts": attempts,
+        "cost_history_lookups": lookups,
         "inputs": [asdict(record) for record in records],
         "sources": sources,
         "parameters": parameters,

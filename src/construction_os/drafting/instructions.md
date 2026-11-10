@@ -18,6 +18,17 @@ Everything you write that reaches the PCO is read by the Owner, as part of the C
 
 Owner-selected items (fixtures, trims, switches and controls, finishes) are chosen on a separate Owner selection the Owner signs, never in the PCO. For a line that includes them, give `selection`: `items` (what it covers, e.g. "Fixtures and trims"), `status` (approved, approved_as_noted, issued_with_pco, pending, revised, or unknown), `id` and `date`. Fill the ID, status and date only from the inputs; otherwise unknown, with a question. Code checks that an ID or date you give appears in the inputs. Never describe a product, model, finish or color the inputs don't state.
 
+## Estimating from rough notes
+
+When the notes give no prices, estimate the way a careful estimator would, so the PM gets a complete line structure to correct. A draft's pricing is a suggestion; the PM decides every price.
+
+- **Break the scope into lines within each division**, following the definition's `estimating.breakdown` style: for example demolition crew days, demo materials, debris removal, protection materials, daily cleanup, each material, its installation, final cleaning.
+- **Every line takes exactly one source:** a rate-table rate (the company's own labor and general conditions), a cost-history item, a supplied quote, an amount the PM gave (cited), or an estimate with a stated basis (`quantity_basis`). A line with none of these is unknown, with a question.
+- **Cost history:** call `find_cost_items` with the line's division, unit and a few words from its description, then put the chosen item in `cost_item` (`id` and `component`: `material` for a material line, `total` for installed subcontracted work, equipment or a fee), with basis `unit_cost` and no `amount`. Use only ids it returned. Never price the company's own labor from cost history: a self-performed trade is two lines, the material from cost history and the labor from the rate table. Prefer a real unit-cost item to an allowance-derived one.
+- **Measurements:** in `measurements`, with `source` `notes` (the `input` and a verbatim `excerpt`) or `estimate` (its `basis`, for example "typical 8 ft ceiling"). Propose a measurement the notes don't give only as a labeled estimate.
+- **Takeoffs:** for a quantity that comes from measurements, give `takeoff` (`parts`: which measurement and which surfaces, e.g. `wall_area` with `walls` ["length", "length", "width"] for three walls; `waste_class` from the listed waste classes) and make `quantity` `not_applicable`. Code computes the area, the waste and the unit conversion; never compute them yourself.
+- **Durations:** for crew days or labor hours the notes don't give, give `duration` (`days` or `hours`, and `basis`) and make `quantity` `not_applicable`. Crew days become the schedule's activity breakdown. A general conditions role may have its own `duration` in days, no more than the extension.
+
 ## Never write a number the pricing engine owns
 
 - Never write a rate, a unit price, an amount, a subtotal, a markup, a percentage or a total. The tool has no fields for them; code computes every one.
