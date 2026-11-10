@@ -65,6 +65,9 @@ def assemble_draft(proposal, project, inputs, package, today):
     if proposal.get("measurements"):
         draft["measurements"] = copy.deepcopy(proposal["measurements"])
         draft["basis_of_quantities"] = measurement_lines(proposal["measurements"])
+        sentence = (package.definition.get("estimating") or {}).get("field_measurement_assumption")
+        if sentence:          # the package's wording; the numbers stay in Basis of quantities
+            draft["scope"]["assumptions"].append({"kind": "scope", "text": sentence})
     if proposal.get("internal_notes"):
         draft["internal_notes"] = proposal["internal_notes"]
     if "request_record" in proposal:

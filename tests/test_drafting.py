@@ -85,7 +85,7 @@ def proposal():
         "nte_amount": {"status": "not_applicable", "reason": "Lump sum."},
         "cost_lines": [
             {"category": "subcontractors", "trade": "electrical", "division": known("26"),
-             "description": "Electrical: two outlets and wiring", "quantity": known(1), "unit": known("LS"),
+             "description": "Two outlets and wiring", "quantity": known(1), "unit": known("LS"),
              "basis": "quote", "permit": "included_in_quote",
              "amount": {"status": "cited", "input": "notes-1", "excerpt": "quoted $640 for the outlets", "value": 640}},
             {"category": "labor", "role": "Carpenter", "trade": "carpentry", "division": known("06"),
@@ -631,7 +631,7 @@ def test_an_assumption_with_an_unknown_group_is_rejected(store, package, tmp_pat
 
 def with_crew(base, amount=None):
     line = {"category": "labor", "role": "Crew", "trade": "carpentry", "division": known("06"),
-            "description": "Carpentry: frame the opening", "quantity": known(2), "unit": known("DAY"),
+            "description": "Frame the opening", "quantity": known(2), "unit": known("DAY"),
             "basis": "rate_x_duration", "permit": "not_applicable"}
     if amount:
         line["amount"] = amount

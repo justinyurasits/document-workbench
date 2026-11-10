@@ -360,8 +360,8 @@ def test_category_labels_and_basis_phrases_come_from_the_package(tmp_path, packa
                                 "description": "Permit", "trade": "permit"})
     rows = [[c.text for c in r.cells] for r in pricing_table(run(tmp_path, package, draft).path).rows[1:6]]
     assert [r[1] for r in rows] == ["Own crew", "Trade partner", "Materials", "Trade partner", "Permits and fees"]
-    assert [r[2] for r in rows] == ["Sample carpentry (8 hours at the house rate)", "Sample electrical",
-                                    "Sample materials (fixed price)", "Patch", "Permit (at cost)"]
+    assert [r[2] for r in rows] == ["Sample carpentry (at the house hourly rate)", "Sample electrical",
+                                    "Sample materials", "Patch", "Permit (at cost)"]   # an estimate gets no phrase
 
 
 def test_a_negative_total_is_a_deduct_in_words_and_figures(tmp_path, package, draft):

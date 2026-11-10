@@ -15,6 +15,7 @@ import jsonschema
 from construction_os.validate import DRAFT_SCHEMA
 
 from .inputs import normalized
+from .wording import wording_errors
 
 TOOL_NAME = "propose_pco_draft"
 CODE_HEADER_FIELDS = ("pco_number", "date", "project")     # set by code: PM assigns the number; today; project.yaml
@@ -137,6 +138,7 @@ def check_proposal(proposal, schema, texts, roles, definition=None, package=None
         elif "text" not in item or "disposition" not in item:
             errors.append(f"{where}: give disposition and text, or use_default where the company has a default.")
     errors += description_errors(proposal, definition)
+    errors += wording_errors(proposal, definition)
     for index, line in enumerate(proposal["cost_lines"]):
         if "selection" in line:
             errors += selection_errors(f"cost_lines/{index} ({line['description']}) selection", line["selection"], texts)
