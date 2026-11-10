@@ -58,7 +58,8 @@ def table_rows(line, package):
     role = line.get("role")
     if key is None or not role:
         return []
-    basis = "weeks_x_rate" if line["category"] == "general_conditions" else "hours_x_rate"
+    basis = "weeks_x_rate" if line["category"] == "general_conditions" else (
+        line["basis"] if line["basis"] == "rate_x_duration" else "hours_x_rate")
     return [Evidence("rate_table", f"{key}, {row['role']}", basis, None, number(row["rate"]), row.get("unit"),
                      row.get("source"))
             for row in package.values.get(key) or [] if row.get("role") == role]

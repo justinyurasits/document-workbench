@@ -414,3 +414,67 @@ def test_whole_weeks_print_without_trailing_zeros(tmp_path, example_root, draft)
     row = next([c.text for c in r.cells] for r in table.rows if r.cells[2].text.startswith("Project management"))
     assert row[3] == "2" and row[6] == "$4,200.00"            # Qty and Amount (no attachment column since #10)
     assert row[2] == "Project management (2 weeks at the house weekly rate)"
+
+
+# Day-rate crews: a labor line whose role and time unit match a rate-table row takes that rate
+
+def crew(role, days, unit="DAY", given=None):
+    unknown = {"status": "unknown", "question": "?"}
+    return {"category": "labor", "role": role, "trade": "carpentry", "division": {"status": "known", "value": "06"},
+            "description": f"{role} work", "quantity": {"status": "known", "value": days} if days else unknown,
+            "unit": {"status": "known", "value": unit},
+            "unit_price": {"status": "known", "value": given} if given else {"status": "not_applicable", "reason": "Table."},
+            "basis": "rate_x_duration",
+            "evidence": {"source": "rate_table", "reference": {"status": "known", "value": "Company rate table"},
+                         "date": {"status": "not_applicable", "reason": "Current."}},
+            "attachment": {"status": "not_applicable", "reason": "None."}, "permit": "not_applicable"}
+
+
+def day_roles(package):
+    """The package's labor roles priced per day, read from its own rate table (no company values in this repo)."""
+    return {row["role"]: D(row["rate"]) for row in package.values["LABOR-BILLING-RATES"] if row["unit"] == "day"}
+
+
+@needs_corpus
+def test_every_day_rate_crew_takes_its_table_rate(draft):
+    package = load_package(CORPUS)
+    roles = day_roles(package)
+    assert roles                                            # the package has day-rate crews to test
+    for days, (role, rate) in enumerate(roles.items(), start=1):
+        draft["cost_lines"] = [crew(role, days)]
+        line = price(draft, package).lines[0]
+        assert (line.unit_price, line.amount) == (rate, rate * days), role
+        assert line.evidence.source == "rate_table" and line.evidence.reference == f"LABOR-BILLING-RATES, {role}"
+        assert line.evidence.basis == "rate_x_duration"
+
+
+@needs_corpus
+def test_a_day_rate_crew_with_unknown_days_shows_the_rate_and_no_amount(draft):
+    package = load_package(CORPUS)
+    role, rate = next(iter(day_roles(package).items()))
+    draft["cost_lines"] = [crew(role, None)]
+    line = price(draft, package).lines[0]
+    assert (line.unit_price, line.amount) == (rate, None)
+
+
+@needs_corpus
+def test_a_differing_day_rate_yields_to_the_table_and_is_flagged(draft):
+    package = load_package(CORPUS)
+    role, rate = next(iter(day_roles(package).items()))
+    draft["cost_lines"] = [crew(role, 2, given=float(rate) - 100)]
+    priced = price(draft, package)
+    assert priced.lines[0].amount == rate * 2 and codes(priced, 0) == ["labor_rate_differs"]
+
+
+@needs_corpus
+def test_a_day_crew_in_hours_is_not_converted(draft):
+    package = load_package(CORPUS)
+    role = next(iter(day_roles(package)))
+    draft["cost_lines"] = [crew(role, 8, unit="HR")]
+    priced = price(draft, package)
+    assert priced.lines[0].amount is None and "labor_unit_mismatch" not in codes(priced)      # no table unit matches: as before
+
+
+def test_the_fixture_crew_day_rate(company, draft):
+    draft["cost_lines"] = [crew("Crew", 2)]
+    assert price(draft, company).lines[0].amount == D("3000.00")
