@@ -603,3 +603,25 @@ def test_case_1_live_run_false_items_and_duplicates_are_gone(store):
     assert "supply the written quotes" not in text and "include the electrical permit and inspection" not in text
     assert "spending limit under APPROVAL-SPEND" not in text
     assert "protection of the living room floor" in text          # a real question stays
+
+
+# Layout v2: section 4 groups and job-specific exclusions
+
+def test_grouped_assumptions_and_exclusions_reach_the_draft(store, package, tmp_path):
+    grouped = proposal()
+    grouped["scope"]["assumptions"] = [{"kind": "access_logistics", "text": "Access to the garage during normal hours."},
+                                       {"kind": "existing_conditions", "text": "The wall framing is sound."}]
+    grouped["scope"]["not_included"] = ["Painting beyond the patched area.", "Work outside the garage."]
+    result, _, _ = run(store, package, tmp_path, grouped)
+    draft = json.loads(result.draft_path.read_text())
+    assert draft["scope"]["not_included"] == ["Painting beyond the patched area.", "Work outside the garage."]
+    text = document_text(result.docx_path)
+    assert "Access to the garage during normal hours." in text and "Work outside the garage." in text
+    assert "Concealed conditions found on opening are excluded." in text or "hidden conditions" in text
+
+
+def test_an_assumption_with_an_unknown_group_is_rejected(store, package, tmp_path):
+    wrong = proposal()
+    wrong["scope"]["assumptions"] = [{"kind": "weather", "text": "Dry weather."}]
+    _, client, _ = run(store, package, tmp_path, wrong, proposal())
+    assert "scope/assumptions/0" in last_feedback(client)

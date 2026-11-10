@@ -64,6 +64,10 @@ Claude proposes the scope, quantities and cited amounts; code checks the proposa
 
 `scripts/live_eval.py` runs the package's acceptance cases through the real API and compares totals and flags with `expected.yaml`, with elapsed time and tokens. It is never run in CI.
 
+## PCO layout
+
+The PCO opens with a branded first page (logo and company name from the profile), then the header table and the no-work notice; later pages carry a compact running header. Sections: 1 Description (a paragraph, "The work includes:", basis of quantities when present, deleted scope when there is some), 2 Pricing, 3 Schedule impact, 4 Assumptions and clarifications, 5 Attachments (only for a supplied Owner-facing drawing), then authorization and side-by-side signatures. The company setting `PRICING-PRESENTATION` chooses the pricing layout: `by_division` (division groups with subtotals, then a summary table), `flat` (one table) or `summary_only` (the summary; the line detail goes to the PM checklist). Every amount is the pricing engine's, to the cent; nothing is rounded.
+
 ## Test
 
 ```
