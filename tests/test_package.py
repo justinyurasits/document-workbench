@@ -330,7 +330,8 @@ def test_day_units_and_unknown_quantities_never_wrap(tmp_path, package):
     from construction_os.rendering.__main__ import preview_env
 
     draft = json.loads((CORPUS / "samples/pco_test1_draft.json").read_text())
-    crew = dict(draft["cost_lines"][3], role="Demo Crew", basis="rate_x_duration", description="Demolition: remove finishes",
+    role, rate = next((row["role"], row["rate"]) for row in package.values["LABOR-BILLING-RATES"] if row["unit"] == "day")
+    crew = dict(draft["cost_lines"][3], role=role, basis="rate_x_duration", description="Demolition: remove finishes",
                 unit={"status": "known", "value": "DAY"}, quantity={"status": "unknown", "question": "How many days?"},
                 unit_price={"status": "unknown", "question": "What day rate?"})
     draft["cost_lines"].append(crew)
@@ -340,5 +341,6 @@ def test_day_units_and_unknown_quantities_never_wrap(tmp_path, package):
     text = subprocess.run(["pdftotext", "-layout", str(result.path.with_suffix(".pdf")), "-"],
                           capture_output=True, text=True).stdout
     row = next(line for line in text.splitlines() if "Demolition: remove" in line)
-    assert re.search(r"\[qty\]\s+DAY\s+\[unit price\]\s+\[amount\]", row), row
+    day_rate = re.escape(f"${Decimal(str(rate)):,.2f}")          # the table's day rate (day-rate crews, #12)
+    assert re.search(rf"\[qty\]\s+DAY\s+{day_rate}\s+\[amount\]", row), row
     assert not re.search(r"(\[qt|\bDA)\s*$", text, re.M)
