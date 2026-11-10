@@ -114,7 +114,7 @@
         "status": "known",
         "value": "08"
       },
-      "description": "Materials: door and associated materials",
+      "description": "Door and associated materials",
       "quantity": {
         "status": "known",
         "value": 1
@@ -140,7 +140,7 @@
         "status": "known",
         "value": "06"
       },
-      "description": "Carpentry: frame the opening and install the door and trim",
+      "description": "Frame the opening, install the door and trim",
       "quantity": {
         "status": "known",
         "value": 1
@@ -165,7 +165,7 @@
         "status": "known",
         "value": "26"
       },
-      "description": "Electrical: modifications for the new door",
+      "description": "Modify the wiring for the new door",
       "quantity": {
         "status": "known",
         "value": 1
@@ -190,7 +190,7 @@
         "status": "known",
         "value": "01"
       },
-      "description": "Permit: building permit",
+      "description": "Building permit",
       "quantity": {
         "status": "known",
         "value": 1

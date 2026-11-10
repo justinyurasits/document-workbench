@@ -74,20 +74,20 @@ def proposal():
                           "height_ft": 8, "source": "estimate", "basis": "about six by four feet in the notes; "
                                                                            "an 8 ft ceiling assumed"}],
         "cost_lines": [
-            line("labor", "Demolition: remove the existing shelving", "DAY", "rate_x_duration", division="02",
+            line("labor", "Remove the existing shelving", "DAY", "rate_x_duration", division="02",
                  trade="demolition", role="Crew", duration={"days": 1, "basis": "two small pantries"}),
-            line("materials", "Demolition: bags, blades and PPE", "LS", "unit_cost", division="02", trade="demolition",
+            line("materials", "Demo bags, blades and PPE", "LS", "unit_cost", division="02", trade="demolition",
                  quantity=known(1), cost_item={"id": "CH-fx000004", "component": "material"}),
-            line("materials", "Carpentry: pine beadboard paneling", "SF", "unit_cost",
+            line("materials", "Beadboard paneling, material", "SF", "unit_cost",
                  cost_item={"id": "CH-fx000001", "component": "material"},
                  takeoff={"parts": [{"measurement": "pantry", "kind": "wall_area", "walls": ["length", "length", "width"]},
                                     {"measurement": "pantry", "kind": "ceiling_area"}], "waste_class": "lumber_wood"}),
-            line("labor", "Carpentry: install the beadboard", "HR", "hours_x_rate", role="Carpenter",
+            line("labor", "Install beadboard paneling", "HR", "hours_x_rate", role="Carpenter",
                  duration={"hours": 12, "basis": "about six hours a pantry"}),
-            line("materials", "Carpentry: pantry shelving systems", "EA", "unit_cost",
+            line("materials", "Pantry shelving systems", "EA", "unit_cost",
                  cost_item={"id": "CH-fx000008", "component": "material"},
                  takeoff={"parts": [{"measurement": "pantry", "kind": "count"}]}),
-            line("materials", "Protection: floor protection runner", "ROLL", "unit_cost", division="01", trade="general",
+            line("materials", "Floor protection", "ROLL", "unit_cost", division="01", trade="general",
                  quantity=known(2), quantity_basis="one roll a pantry path",
                  cost_item={"id": "CH-fx000005", "component": "material"}),
         ],
@@ -208,14 +208,14 @@ def test_a_wall_area_needs_a_height(package):
 def test_an_estimated_draft_has_a_source_and_a_price_on_every_line(store, package, tmp_path):
     result, _ = run(store, package, tmp_path, proposal())
     lines = lines_of(result)
-    assert (lines["Demolition: remove the existing shelving"].quantity,
-            lines["Demolition: remove the existing shelving"].amount) == (D(1), D("1500.00"))      # Crew 1 DAY at the table
-    assert lines["Demolition: bags, blades and PPE"].amount == D("300.00")
-    paneling = lines["Carpentry: pine beadboard paneling"]
+    assert (lines["Remove the existing shelving"].quantity,
+            lines["Remove the existing shelving"].amount) == (D(1), D("1500.00"))      # Crew 1 DAY at the table
+    assert lines["Demo bags, blades and PPE"].amount == D("300.00")
+    paneling = lines["Beadboard paneling, material"]
     assert (paneling.quantity, paneling.unit_price, paneling.amount) == (D("334.4"), D("6.00"), D("2006.40"))
-    assert lines["Carpentry: install the beadboard"].amount == D("1200.00")                   # 12 HR × 100
-    assert lines["Carpentry: pantry shelving systems"].amount == D("800.00")                    # 2 EA × 400 (mid)
-    assert lines["Protection: floor protection runner"].amount == D("240.00")                    # 2 ROLL × 120 (mid)
+    assert lines["Install beadboard paneling"].amount == D("1200.00")                   # 12 HR × 100
+    assert lines["Pantry shelving systems"].amount == D("800.00")                    # 2 EA × 400 (mid)
+    assert lines["Floor protection"].amount == D("240.00")                    # 2 ROLL × 120 (mid)
     assert result.priced.complete
     assert {l.evidence.source for l in result.priced.lines} == {"rate_table", "cost_history"}
 
@@ -224,7 +224,7 @@ def test_measurements_and_durations_fill_the_draft(store, package, tmp_path):
     result, _ = run(store, package, tmp_path, proposal())
     draft = json.loads(result.draft_path.read_text())
     assert draft["basis_of_quantities"] == ["Each of two (2) pantries: approximately 6 ft × 4 ft, 8 ft high."]
-    assert draft["schedule"]["activities"] == [{"activity": "Demolition: remove the existing shelving", "duration_days": 1}]
+    assert draft["schedule"]["activities"] == [{"activity": "Remove the existing shelving", "duration_days": 1}]
     assert draft["cost_lines"][2]["takeoff"]["result"] == "334.40"
 
 
@@ -233,12 +233,12 @@ def test_the_checklist_lists_every_estimate_and_cost_history_price(store, packag
     text = document_text(result.checklist_path)
     assert "Confirm field dimensions before sending." in text.split("Worth confirming")[0]     # Before sending
     assert "Estimated measurement: Each of two (2) pantries, 6 × 4 ft, 8 ft high. Basis: about six by four feet" in text
-    assert "Quantity from takeoff (estimated measurements): Carpentry: pine beadboard paneling: 2 × (6 + 6 + 4 ft)" in text
-    assert "Estimated duration: Demolition: remove the existing shelving: 1 days. Basis: two small pantries" in text
-    assert "Estimated quantity: Protection: floor protection runner: 2 ROLL. Basis: one roll a pantry path" in text
-    assert ('Carpentry: pine beadboard paneling: Cost history CH-fx000001: "Pine beadboard paneling", '
+    assert "Quantity from takeoff (estimated measurements): Beadboard paneling, material: 2 × (6 + 6 + 4 ft)" in text
+    assert "Estimated duration: Remove the existing shelving: 1 days. Basis: two small pantries" in text
+    assert "Estimated quantity: Floor protection: 2 ROLL. Basis: one roll a pantry path" in text
+    assert ('Beadboard paneling, material: Cost history CH-fx000001: "Pine beadboard paneling", '
             "material $6.00/SF at the mid point; range $5.00–$7.00; 3 data points.") in text
-    assert "Demolition: bags, blades and PPE: Cost history CH-fx000004" in text and "no range; 1 data point." in text
+    assert "Demo bags, blades and PPE: Cost history CH-fx000004" in text and "no range; 1 data point." in text
 
 
 def test_the_owners_pco_shows_none_of_the_estimating_detail(store, package, tmp_path):
@@ -251,7 +251,7 @@ def test_the_owners_pco_shows_none_of_the_estimating_detail(store, package, tmp_
 
 def test_an_allowance_derived_price_is_marked_on_the_checklist(store, package, tmp_path):
     allowance = proposal()
-    allowance["cost_lines"][2] = line("materials", "Carpentry: beadboard paneling package", "LS", "unit_cost",
+    allowance["cost_lines"][2] = line("materials", "Beadboard paneling package", "LS", "unit_cost",
                                       quantity=known(1), cost_item={"id": "CH-fx000002", "component": "material"})
     result, _ = run(store, package, tmp_path, allowance)
     text = document_text(result.checklist_path)
@@ -303,16 +303,16 @@ def test_a_typed_amount_on_a_cost_history_line_is_rejected(store, package, tmp_p
 
 def test_installed_subcontract_work_is_one_line_from_the_item_total(store, package, tmp_path):
     sub = proposal()
-    sub["cost_lines"].append(line("subcontractors", "Plumbing: rough-in for a sink", "EA", "unit_cost", division="22",
+    sub["cost_lines"].append(line("subcontractors", "Sink rough-in", "EA", "unit_cost", division="22",
                                   trade="plumbing", quantity=known(1), cost_item={"id": "CH-fx000011", "component": "total"}))
     result, _ = run(store, package, tmp_path, sub)
-    assert lines_of(result)["Plumbing: rough-in for a sink"].amount == D("2000.00")
+    assert lines_of(result)["Sink rough-in"].amount == D("2000.00")
     assert "Possible double count" not in document_text(result.checklist_path)
 
 
 def test_installed_work_beside_company_labor_in_the_same_trade_is_flagged(store, package, tmp_path):
     double = proposal()
-    double["cost_lines"].append(line("subcontractors", "Carpentry: installed beadboard", "SF", "unit_cost",
+    double["cost_lines"].append(line("subcontractors", "Installed beadboard", "SF", "unit_cost",
                                      quantity=known(100), cost_item={"id": "CH-fx000001", "component": "total"}))
     result, _ = run(store, package, tmp_path, double)
     assert "Possible double count" in document_text(result.checklist_path)
@@ -407,7 +407,7 @@ def test_changing_the_range_point_or_a_waste_factor_changes_the_total(tmp_path, 
 # The live script grades an estimating case on structure, not a total (checked here offline, with the fake client)
 
 STRUCTURE = {"exact": {"pricing_structure": {
-    "required_scope": [{"item": "demolition", "division": "02", "any_of": ["demolition"]},
+    "required_scope": [{"item": "demolition", "division": "02", "any_of": ["demolition", "remove"]},
                        {"item": "paneling material", "division": "06", "category": "materials", "any_of": ["beadboard"]},
                        {"item": "paneling installation", "division": "06", "category": "labor", "any_of": ["beadboard"]}],
     "every_line_sourced": ["rate_table", "cost_history", "supplied_quote", "pm_notes", "estimate"],

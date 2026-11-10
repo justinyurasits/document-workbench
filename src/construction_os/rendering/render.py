@@ -13,6 +13,7 @@ from jinja2 import Environment, StrictUndefined
 
 from construction_os.conditions import evaluate
 from construction_os.pricing import cents, price
+from construction_os.pricing.cost_history import unit_name
 
 from .words import dollars_in_words
 
@@ -161,14 +162,20 @@ def category_label(category, presentation):
     return (presentation.get("category_labels") or {}).get(category) or category.replace("_", " ").capitalize()
 
 
+PERIODS = {"HR": "hourly", "DAY": "daily", "WK": "weekly", "MO": "monthly"}
+
+
 def basis_phrase(line, quantity, presentation):
-    """The line's basis in the Owner's terms: "(6 hours at the Contractor's rate)", "(lump sum)". Never names a
-    quote, a subcontractor or how a figure was estimated; a basis with no phrase (a subcontract line) gets none."""
+    """The line's basis in the Owner's terms, as the package words it: "(at the Contractor's hourly rate)". Never
+    names a quote, a subcontractor or how a figure was estimated; a basis with no phrase (a subcontract line or an
+    estimate) gets none. {period} is the line's unit as a rate period (hourly, daily, weekly)."""
     template = (presentation.get("basis_phrases") or {}).get(line["basis"])
     if not template:
         return ""
     amount = quantity_text(line["quantity"]) if quantity is None else number_text(quantity)
-    return f" ({template.format(quantity=amount, unit=shown(line['unit'], '[unit]'))})"
+    unit = line["unit"].get("value") if line["unit"].get("status") == "known" else None
+    period = PERIODS.get(unit_name(unit), "[period]") if unit else "[period]"
+    return f" ({template.format(quantity=amount, unit=shown(line['unit'], '[unit]'), period=period)})"
 
 
 def number_text(value):

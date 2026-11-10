@@ -118,7 +118,7 @@
         "status": "known",
         "value": "26"
       },
-      "description": "Electrical: furnish and install six (6) recessed LED light fixtures, including wiring and switches",
+      "description": "Recessed LED light fixtures, wiring and switches",
       "quantity": {
         "status": "known",
         "value": 1
@@ -155,7 +155,7 @@
         "status": "known",
         "value": "09"
       },
-      "description": "Drywall: patch the ceiling at the fixture openings",
+      "description": "Patch the ceiling at the fixture openings",
       "quantity": {
         "status": "known",
         "value": 1
@@ -180,7 +180,7 @@
         "status": "known",
         "value": "09"
       },
-      "description": "Painting: prime and paint the affected ceiling areas",
+      "description": "Prime and paint the affected ceiling areas",
       "quantity": {
         "status": "known",
         "value": 1
@@ -206,7 +206,7 @@
         "status": "known",
         "value": "06"
       },
-      "description": "Carpentry: open the ceiling and coordinate the trades",
+      "description": "Open the ceiling and coordinate the trades",
       "quantity": {
         "status": "known",
         "value": 6

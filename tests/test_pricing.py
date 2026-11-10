@@ -385,9 +385,9 @@ def test_renderer_shows_prorated_gc_and_the_engines_rate(tmp_path, example_root,
     rows, table = summary(result.path)
     assert rows["Total"] == "$9,686.45"
     texts = [[c.text for c in r.cells] for r in table.rows]
-    assert any(r[2] == "Supervision (1.57 weeks at the house weekly rate)" and "1.57" in r and "$2,826.00" in r
+    assert any(r[2] == "Supervision (at the house weekly rate)" and "1.57" in r and "$2,826.00" in r
                for r in texts)
-    assert any(r[2] == "Sample carpentry (8 hours at the house rate)" and "$100.00" in r for r in texts)
+    assert any(r[2] == "Sample carpentry (at the house hourly rate)" and "$100.00" in r for r in texts)
     checklist = document_text(render_checklist(result, draft, load_package(example_root), tmp_path / "check.docx"))
     assert "differs from the company rate" in checklist
 
@@ -413,7 +413,7 @@ def test_whole_weeks_print_without_trailing_zeros(tmp_path, example_root, draft)
     _, table = summary(render(draft, load_package(example_root), tmp_path / "out.docx").path)
     row = next([c.text for c in r.cells] for r in table.rows if r.cells[2].text.startswith("Project management"))
     assert row[3] == "2" and row[6] == "$4,200.00"            # Qty and Amount (no attachment column since #10)
-    assert row[2] == "Project management (2 weeks at the house weekly rate)"
+    assert row[2] == "Project management (at the house weekly rate)"
 
 
 # Day-rate crews: a labor line whose role and time unit match a rate-table row takes that rate

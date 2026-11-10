@@ -331,7 +331,7 @@ def test_day_units_and_unknown_quantities_never_wrap(tmp_path, package):
 
     draft = json.loads((CORPUS / "samples/pco_test1_draft.json").read_text())
     role, rate = next((row["role"], row["rate"]) for row in package.values["LABOR-BILLING-RATES"] if row["unit"] == "day")
-    crew = dict(draft["cost_lines"][3], role=role, basis="rate_x_duration", description="Demolition: remove finishes",
+    crew = dict(draft["cost_lines"][3], role=role, basis="rate_x_duration", description="Remove finishes",
                 unit={"status": "known", "value": "DAY"}, quantity={"status": "unknown", "question": "How many days?"},
                 unit_price={"status": "unknown", "question": "What day rate?"})
     draft["cost_lines"].append(crew)
@@ -340,7 +340,40 @@ def test_day_units_and_unknown_quantities_never_wrap(tmp_path, package):
                    check=True, capture_output=True, env=preview_env())
     text = subprocess.run(["pdftotext", "-layout", str(result.path.with_suffix(".pdf")), "-"],
                           capture_output=True, text=True).stdout
-    row = next(line for line in text.splitlines() if "Demolition: remove" in line)
+    row = next(line for line in text.splitlines() if "Remove finishes" in line)
     day_rate = re.escape(f"${Decimal(str(rate)):,.2f}")          # the table's day rate (day-rate crews, #12)
     assert re.search(rf"\[qty\]\s+DAY\s+{day_rate}\s+\[amount\]", row), row
     assert not re.search(r"(\[qt|\bDA)\s*$", text, re.M)
+
+
+# Say each thing once (Nov 10): the columns carry quantity and unit, and only the deliberate repeat stays
+
+@pytest.mark.parametrize("unit", ["SF", "EA", "LOAD", "LS"])
+def test_an_estimate_line_never_says_lump_sum(tmp_path, package, unit):
+    draft = json.loads((CORPUS / "samples/pco_test1_draft.json").read_text())
+    line = draft["cost_lines"][0]
+    draft["cost_lines"].append(dict(line, basis="estimate", description="Sample label", unit={"status": "known", "value": unit}))
+    rows = [[c.text for c in r.cells] for r in pricing_table(render(draft, package, tmp_path / "e.docx").path).rows]
+    assert [r[2] for r in rows if r[2].startswith("Sample label")] == ["Sample label"]
+    assert not any("lump sum" in r[2].lower() for r in rows)
+
+
+def test_rate_lines_name_the_rate_period_but_not_the_quantity(tmp_path, package):
+    draft = json.loads((CORPUS / "samples/pco_test1_draft.json").read_text())
+    phrases = package.definition["presentation"]["basis_phrases"]
+    assert all("{quantity}" not in phrase and "{unit}" not in phrase for phrase in phrases.values())
+    rows = [[c.text for c in r.cells] for r in pricing_table(render(draft, package, tmp_path / "r.docx").path).rows]
+    for line in draft["cost_lines"]:
+        if line["basis"] == "hours_x_rate":
+            row = next(r for r in rows if r[2].startswith(line["description"]))
+            assert row[2] == f"{line['description']} ({phrases['hours_x_rate']})" and row[3] not in row[2]
+
+
+def test_the_notice_and_the_authorization_both_keep_the_deliberate_repeat(tmp_path, package):
+    path = rendered(tmp_path, package, SAMPLES[0]).path
+    notice = Document(path).tables[1].rows[0].cells[0].text.lower()
+    authorization = document_text(path).lower().split("authoriz", 1)[1]
+    for text in (notice, authorization):
+        assert "email" in text and "does not authorize" in text
+    assert "no work" in notice and "signed" in notice
+    assert "signature" in authorization or "signing" in authorization or "signed" in authorization

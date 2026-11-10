@@ -35,10 +35,9 @@ presentation:                    # fictional wording, so tests prove the PCO rea
   number_style: "six (6)"
   category_labels: {labor: Own crew, subcontractors: Trade partner, materials: Materials, equipment: Equipment, general_conditions: General conditions, permits_and_fees: Permits and fees}
   basis_phrases:
-    hours_x_rate: "{quantity} hours at the house rate"
-    weeks_x_rate: "{quantity} weeks at the house weekly rate"
-    rate_x_duration: "{quantity} {unit} at the house rate"
-    estimate: fixed price
+    hours_x_rate: "at the house hourly rate"
+    weeks_x_rate: "at the house weekly rate"
+    rate_x_duration: "at the house {period} rate"
     actual_fee: at cost
   markup_basis:
     company: "House markup: {rates}, on the direct-cost subtotal."
@@ -110,3 +109,4 @@ estimating:
   breakdown:
     - "Example Builders lists demolition, protection, each material and its installation as separate lines."
   sources: [rate_table, cost_history, supplied_quote, pm_amount, estimate]
+  field_measurement_assumption: "Sizes are approximate and get checked on site before work starts."
